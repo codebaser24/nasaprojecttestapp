@@ -1,0 +1,231 @@
+{
+  "schema": "ares-geology-v1",
+  "source": {
+    "agency": "U.S. Geological Survey",
+    "publication": "Sun and Stack (2020), USGS Scientific Investigations Map 3464",
+    "database": "sim3464_database.zip / Nili.gdb",
+    "layer": "GeoUnits_v1",
+    "url": "https://pubs.usgs.gov/sim/3464/"
+  },
+  "interpretation": "Geological map units, not direct mineral detections or rover safety ratings",
+  "palette_note": "ARES visualization colours; not official USGS map colours",
+  "dem": {
+    "filename": "M20_JezeroCrater_CTXDEM_20m.tif",
+    "width": 4456,
+    "height": 5067,
+    "crs_wkt": "PROJCS[\"Jezero_Crater_Projection\",GEOGCS[\"GCS_Mars_2000_Sphere\",DATUM[\"Mars_2000_(Sphere)\",SPHEROID[\"Mars_2000_Sphere\",3396190,0]],PRIMEM[\"Reference_Meridian\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]]],PROJECTION[\"Equirectangular\"],PARAMETER[\"standard_parallel_1\",18.4663],PARAMETER[\"central_meridian\",0],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+    "affine_gdal": [
+      4328999.999999998,
+      20.0,
+      0.0,
+      1143420.0000000028,
+      0.0,
+      -20.0
+    ],
+    "pixel_area_m2": 400.0
+  },
+  "image": "jezero-geology.png",
+  "unmapped_alpha": 0,
+  "mapped_alpha": 170,
+  "coverage": {
+    "mapped_pixels": 6686784,
+    "unmapped_pixels": 15891768,
+    "mapped_fraction": 0.296156,
+    "mapped_area_km2": 2674.714
+  },
+  "geometry": {
+    "input_features": 1304,
+    "processed_features": 1304,
+    "repaired_fids": [
+      666,
+      1155
+    ],
+    "skipped_empty_fids": []
+  },
+  "units": [
+    {
+      "id": 1,
+      "symbol": "Aeb",
+      "names": [
+        "Eolian bedform unit"
+      ],
+      "unit_codes": [
+        "7"
+      ],
+      "color": "#d79a80",
+      "feature_count": 475,
+      "pixel_count": 643140
+    },
+    {
+      "id": 2,
+      "symbol": "Hnpf",
+      "names": [
+        "Nili Planum fan unit"
+      ],
+      "unit_codes": [
+        "4"
+      ],
+      "color": "#7bb0a4",
+      "feature_count": 8,
+      "pixel_count": 1747
+    },
+    {
+      "id": 3,
+      "symbol": "NHjf1",
+      "names": [
+        "Jezero fan 1 unit"
+      ],
+      "unit_codes": [
+        "1"
+      ],
+      "color": "#c2b077",
+      "feature_count": 9,
+      "pixel_count": 31869
+    },
+    {
+      "id": 4,
+      "symbol": "NHjf2",
+      "names": [
+        "Jezero fan 2 unit"
+      ],
+      "unit_codes": [
+        "0"
+      ],
+      "color": "#a79bcf",
+      "feature_count": 15,
+      "pixel_count": 67727
+    },
+    {
+      "id": 5,
+      "symbol": "Njf",
+      "names": [
+        "Jezero floor unit"
+      ],
+      "unit_codes": [
+        "2"
+      ],
+      "color": "#d1a6c0",
+      "feature_count": 13,
+      "pixel_count": 864492
+    },
+    {
+      "id": 6,
+      "symbol": "Nle",
+      "names": [
+        "Lower etched unit"
+      ],
+      "unit_codes": [
+        "3"
+      ],
+      "color": "#91a8d3",
+      "feature_count": 20,
+      "pixel_count": 438793
+    },
+    {
+      "id": 7,
+      "symbol": "Nnp1",
+      "names": [
+        "Nili Planum 1 unit"
+      ],
+      "unit_codes": [
+        "6"
+      ],
+      "color": "#b5be83",
+      "feature_count": 156,
+      "pixel_count": 1418921
+    },
+    {
+      "id": 8,
+      "symbol": "Nnp2",
+      "names": [
+        "Nili Planum 2 unit"
+      ],
+      "unit_codes": [
+        "5"
+      ],
+      "color": "#e2b66f",
+      "feature_count": 128,
+      "pixel_count": 73414
+    },
+    {
+      "id": 9,
+      "symbol": "Nrb",
+      "names": [
+        "Rugged bright unit"
+      ],
+      "unit_codes": [
+        "9"
+      ],
+      "color": "#8cbcc8",
+      "feature_count": 70,
+      "pixel_count": 142428
+    },
+    {
+      "id": 10,
+      "symbol": "Nue",
+      "names": [
+        "Upper etched unit"
+      ],
+      "unit_codes": [
+        "10",
+        "5"
+      ],
+      "color": "#d09a9c",
+      "feature_count": 269,
+      "pixel_count": 1740525
+    },
+    {
+      "id": 11,
+      "symbol": "ce",
+      "names": [
+        "Crater ejecta unit"
+      ],
+      "unit_codes": [
+        "12"
+      ],
+      "color": "#a6a0a0",
+      "feature_count": 15,
+      "pixel_count": 375973
+    },
+    {
+      "id": 12,
+      "symbol": "ci",
+      "names": [
+        "Crater interior unit"
+      ],
+      "unit_codes": [
+        "13"
+      ],
+      "color": "#b4a0d2",
+      "feature_count": 9,
+      "pixel_count": 4989
+    },
+    {
+      "id": 13,
+      "symbol": "cr",
+      "names": [
+        "Crater riim unit",
+        "Crater rim unit"
+      ],
+      "unit_codes": [
+        "11"
+      ],
+      "color": "#a6c6a0",
+      "feature_count": 64,
+      "pixel_count": 417756
+    },
+    {
+      "id": 14,
+      "symbol": "su",
+      "names": [
+        "Smooth unit, undivided"
+      ],
+      "unit_codes": [
+        "8"
+      ],
+      "color": "#d8c18e",
+      "feature_count": 53,
+      "pixel_count": 465010
+    }
+  ]
+}

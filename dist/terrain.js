@@ -24,6 +24,52 @@ let demZoom = 1,
   demY = 0;
 const demLayers = new Set();
 const demOverlays = {};
+const rasterLayerOrder = ["geology", "contours", "hazards"];
+let geologyMetadataPromise;
+
+function setGeologyLegendVisible(view, visible) {
+  const legend = document.getElementById(`${view}-geology-legend`);
+  if (legend) legend.hidden = !visible;
+  if (visible) loadGeologyLegend();
+}
+
+function loadGeologyLegend() {
+  if (!geologyMetadataPromise) {
+    geologyMetadataPromise = request("jezero-geology.json")
+      .then((metadata) => {
+        if (metadata.schema !== "ares-geology-v1" || !Array.isArray(metadata.units))
+          throw new Error("Unexpected geology metadata format");
+        for (const legend of document.querySelectorAll(".geology-legend")) {
+          legend.querySelector(".geology-legend-count").textContent =
+            `(${metadata.units.length} units)`;
+          const content = legend.querySelector(".geology-legend-content");
+          content.replaceChildren();
+          const list = document.createElement("ul");
+          list.className = "geology-unit-list";
+          for (const unit of metadata.units) {
+            const item = document.createElement("li");
+            const swatch = document.createElement("i");
+            swatch.className = "geology-swatch";
+            // Colour is display-only, never used as a geological identifier.
+            if (/^#[0-9a-fA-F]{6}$/.test(unit.color)) swatch.style.backgroundColor = unit.color;
+            const name = document.createElement("span");
+            name.textContent = `${unit.symbol} — ${(unit.names || []).join(" / ")}`;
+            item.append(swatch, name);
+            list.append(item);
+          }
+          const note = document.createElement("p");
+          note.textContent = "USGS Sun & Stack (2020), SIM 3464. ARES display colours (not official USGS colours). Geological units are interpretations, not mineral detections or rover safety ratings. Transparent areas are unmapped.";
+          content.append(list, note);
+        }
+      })
+      .catch((error) => {
+        for (const content of document.querySelectorAll(".geology-legend-content"))
+          content.textContent = `Geology legend unavailable: ${error.message}`;
+      });
+  }
+  return geologyMetadataPromise;
+}
+
 
 function setDemZoom(value) {
   demZoom = Math.min(12, Math.max(1, value));
@@ -50,7 +96,8 @@ function draw() {
   context.scale(demZoom, demZoom);
   context.translate(-canvas.width / 2, -canvas.height / 2);
   context.drawImage(base, 0, 0);
-  for (const layer of demLayers) {
+  for (const layer of rasterLayerOrder) {
+    if (!demLayers.has(layer)) continue;
     const overlay = demOverlays[layer];
     if (overlay?.complete && overlay.naturalWidth)
       context.drawImage(overlay, 0, 0);
@@ -411,6 +458,13 @@ function showMissionTerrain() {
   }
   applyWaypointEdits();
   setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
+  // Identical DEM-aligned image placement; below contours, hazards and routes.
+  const geology = document.getElementById("geology");
+  setTerrainImage(geology, "jezero-geology.png");
+  geology.querySelector("image").addEventListener("error", () => {
+    console.warn("Geology raster unavailable on mission map.");
+  });
+  setGeologyLegendVisible("mission", state.layers.includes("geology"));
   // Use the same interpolated contours in the mission map.
   setTerrainImage(
     document.getElementById("contours"),
@@ -726,6 +780,7 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
       // Interpolated CTX DEM contours: 50 m minor, 250 m major.
       contours: "jezero-contours-v2.png",
       hazards: "jezero-hazards-v2.png",
+      geology: "jezero-geology.png",
     }[layer];
     if (source && !demOverlays[layer]) {
       const image = new Image();
@@ -757,8 +812,13 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
 
       image.src = source;
     }
+    if (layer === "geology") setGeologyLegendVisible("dem", active);
     if (grid) draw();
   };
+});
+
+document.querySelector('[data-layer="geology"]').addEventListener("click", () => {
+  setGeologyLegendVisible("mission", state.layers.includes("geology"));
 });
 
 const demPointers = new Map();
