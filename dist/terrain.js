@@ -336,10 +336,23 @@ async function routeMissionOnDem() {
 
 function setTerrainImage(target, url, replace = false) {
   const image = document.createElementNS(target.namespaceURI, "image");
+
   image.setAttribute("width", "1000");
   image.setAttribute("height", "700");
   image.setAttribute("preserveAspectRatio", "none");
+
+  // Fall back to the original contour overlay if v2 cannot load.
+  if (url === "jezero-contours-v2.png") {
+    image.addEventListener("error", () => {
+      if (image.getAttribute("href") !== "jezero-contours.png") {
+        console.warn("Contour v2 unavailable; using original contours.");
+        image.setAttribute("href", "jezero-contours.png");
+      }
+    });
+  }
+
   image.setAttribute("href", url);
+
   if (replace) target.replaceWith(image);
   else target.replaceChildren(image);
 }
@@ -366,7 +379,11 @@ function showMissionTerrain() {
   }
   applyWaypointEdits();
   setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
-  setTerrainImage(document.getElementById("contours"), "jezero-contours.png");
+  // Use the same interpolated contours in the mission map.
+  setTerrainImage(
+    document.getElementById("contours"),
+    "jezero-contours-v2.png",
+  );
   document.getElementById("map").classList.add("has-real-terrain");
   world.querySelectorAll(".terrain-label").forEach((label) => label.remove());
   document.querySelector("#map .scale").hidden = true;
@@ -674,15 +691,32 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
     const source = {
-      contours: "jezero-contours.png",
+      // Interpolated CTX DEM contours: 50 m minor, 250 m major.
+      contours: "jezero-contours-v2.png",
       hazards: "jezero-hazards.png",
     }[layer];
     if (source && !demOverlays[layer]) {
       const image = new Image();
       demOverlays[layer] = image;
+
+      // Redraw when the selected overlay finishes loading.
       image.onload = () => {
         if (grid) draw();
       };
+
+      // If interpolated contours are unavailable, use the original overlay.
+      image.onerror = () => {
+        if (
+          layer === "contours" &&
+          !image.src.endsWith("jezero-contours.png")
+        ) {
+          console.warn("Contour v2 unavailable; loading original contours.");
+          image.src = "jezero-contours.png";
+        } else {
+          console.error(`Unable to load ${layer} overlay.`);
+        }
+      };
+
       image.src = source;
     }
     if (grid) draw();

@@ -1,31 +1,499 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111513"><title>ARES / Field Atlas</title><link rel="stylesheet" href="style.css?v=mission-fullscreen-tools"></head>
-<body><aside class="rail"><a class="mark" href="./" aria-label="ARES home">A<span>•</span></a><button class="rail-button active" title="Field atlas" aria-label="Field atlas">◎</button><button class="rail-button" id="scienceNav" title="Science targets" aria-label="Science targets">⚗</button><button class="rail-button" id="logNav" title="Mission briefing" aria-label="Mission briefing">▤</button><div class="rail-bottom">M<br>A<br>R<br>S</div></aside>
-<div class="workspace"><header><div class="brand">Space<span>Byte</span></div><div class="header-status"><span class="live"></span> EXPLORATION SIMULATOR <span class="divider">|</span> SOL 048 <span class="time">09:42 LMST</span></div><div><button id="briefing" class="quiet">Mission briefing ↗</button></div></header>
-<main><section class="heading"><div><div class="eyebrow">SURFACE OPERATIONS <span>/</span> MISSION 004</div><h1>A little further. <em>A world to discover.</em></h1><p>Plan your traverse. Read the terrain. Make every step count.</p></div><button class="primary" id="export">↓ Export mission</button></section>
-<div class="view-switch" role="tablist" aria-label="Atlas views"><button type="button" class="quiet" id="mission-view" role="tab" aria-selected="true" aria-controls="mission-panel">Mission simulation</button><button type="button" class="quiet" id="dem-view" role="tab" aria-selected="false" tabindex="-1" aria-controls="dem-panel">DEM routing</button></div><section class="dashboard" id="mission-panel" role="tabpanel" aria-labelledby="mission-view"><div class="map-column"><div class="map-top"><div><span class="live"></span><strong>Jezero Crater</strong><span class="coordinates">18.44° N &nbsp; 77.45° E</span></div><span class="tag">MARS / SECTOR 07</span></div><div class="map" id="map"><svg id="terrain" viewBox="0 0 1000 700" role="img" aria-label="Illustrative Jezero terrain with selectable mission waypoints"><defs><radialGradient id="ground"><stop stop-color="#947a5b"/><stop offset="1" stop-color="#413d30"/></radialGradient><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="5" seed="8"/><feColorMatrix type="saturate" values="0"/><feBlend in="SourceGraphic" mode="multiply"/></filter><pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M100 0H0V100" fill="none" stroke="#e3d7b6" stroke-opacity=".1"/></pattern></defs><g id="mapWorld"><g id="terrainFallback"><rect width="1000" height="700" fill="url(#ground)"/><rect width="1000" height="700" fill="#a99b7e" filter="url(#rough)" opacity=".65"/></g><g id="contours"></g><rect width="1000" height="700" fill="url(#grid)"/><g id="hazards"><path d="M620 140L780 180 850 310 742 350 650 260Z" fill="#c27c50" fill-opacity=".17" stroke="#d8a177" stroke-dasharray="5 7"/><text x="703" y="245" class="map-label">△ STEEP TERRAIN</text></g><g id="thermal" hidden><ellipse cx="440" cy="370" rx="240" ry="170" fill="#e8a23f" opacity=".18"/><ellipse cx="730" cy="260" rx="120" ry="150" fill="#bf573b" opacity=".25"/></g><g id="minerals" hidden><path d="M180 220L340 170 580 310 500 390 270 330Z" fill="#85c3b0" opacity=".22" stroke="#b1e5cb" stroke-dasharray="6 5"/></g><text x="145" y="180" class="terrain-label">WESTERN DELTA</text><text x="660" y="560" class="terrain-label">SÉÍTAH</text><text x="75" y="590" class="terrain-label small">JEZERO FLOOR</text><path id="routeLine" d="M240 520L340 410 475 320 590 390" fill="none" stroke="#d9f897" stroke-width="3" stroke-dasharray="8 6"/><g id="pins"></g></g></svg><div class="map-badge"><span class="live"></span> ORBITAL VIEW <span> / </span> ILLUSTRATIVE FALLBACK</div><div class="map-tools"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="resetMap" aria-label="Reset map">⌖</button></div><div class="compass">N<div>↑</div></div><div class="scale">└────────┘<br><span id="scaleLabel">500 m</span></div><button type="button" class="map-fullscreen" id="fullscreenMap" aria-label="Fullscreen map" aria-pressed="false" title="Fullscreen map">&#x26F6;</button><div class="map-caption">JEZERO QUADRANGLE <span></span></div><div id="targetCard" class="target-card"><div class="eyebrow">SCIENCE WAYPOINT 02 <span>↗</span></div><h3>Delta outcrop</h3><p>Ancient sediments. New possibilities.</p><div><span class="dot mint"></span> High science value <span>+ 25 min</span></div></div></div>
-<div class="layer-bar"><span class="eyebrow">MAP LAYERS</span><button class="layer active" data-layer="contours">◉ Topography</button><button class="layer active" data-layer="hazards">△ Hazards</button><button class="layer" data-layer="minerals">◇ Minerals</button><button class="layer" data-layer="thermal">☀ Thermal</button><button class="info" id="sources" aria-label="Data sources">ⓘ</button></div>
-<div class="conditions"><div class="conditions-title"><span class="eyebrow">SURFACE CONDITIONS</span><span>Simulated • Sol 048</span></div><div class="condition-grid"><div><span>☀ &nbsp; TEMPERATURE</span><strong>−63<small>°C</small></strong><p>Cold, clear conditions</p></div><div><span>≋ &nbsp; WIND SPEED</span><strong>12<small>km/h</small></strong><p>From the northwest</p></div><div><span>◌ &nbsp; RADIATION</span><strong>0.24<small>mSv/day</small></strong><p><i></i> Demo baseline</p></div><div><span>◐ &nbsp; DAYLIGHT LEFT</span><strong>08<small>h</small> 16<small>m</small></strong><p>Sunset at 17:58 LMST</p></div></div></div></div>
-<aside class="planner"><div class="planner-title"><div class="eyebrow">YOUR NEXT FRONTIER</div><h2>Traverse planner <span>↗</span></h2><p>A good mission starts with a better route.</p></div><div class="route-mode"><button class="selected" data-mode="balanced">Balanced</button><button data-mode="safe">Low exposure</button><button data-mode="science">Science first</button></div><div class="route-heading"><span>MISSION WAYPOINTS</span><span id="stopCount">04 STOPS</span></div><div id="waypoints"></div><div class="waypoint-actions"><button type="button" class="quiet" id="customWaypoint">Add custom stop</button><button type="button" class="quiet" id="editWaypoint">Edit selected</button></div><p class="waypoint-help">Select a stop to edit it, or drag a map marker to move it.</p><button id="add" class="add-stop">+ Add science waypoint</button><button type="button" class="add-stop" id="calculateMission" style="margin-top:8px">Calculate route</button><div class="waypoint-actions" style="margin-top:8px"><button type="button" class="quiet" id="stopMission" disabled>Stop</button><button type="button" class="quiet" id="resetMission" disabled>Reset</button></div><div class="route-stats"><div><span>Distance</span><strong id="distance">2.4 <small>km</small></strong></div><div><span>Est. duration</span><strong id="duration">2h 15m</strong></div><div><span>Science value</span><strong id="value" class="green">High <small>↗</small></strong></div><div><span>Max. slope</span><strong id="slope">12 <small>°</small></strong></div></div><div class="advisory"><span>◈</span><div><strong id="advisoryTitle">Room to explore.</strong><p id="advisoryText">This route keeps a 35% oxygen reserve for your return to habitat.</p></div></div><button class="primary start" id="start">Start mission preview <span>→</span></button><div class="planner-foot">◷ &nbsp; Your plan is saved on this device</div></aside></section>
-<section id="dem-panel" role="tabpanel" hidden aria-labelledby="dem-view">
-
-  <h2>Jezero terrain routing</h2>
-  <p>Click the map to place the blue start point, then the green destination. You can also enter grid coordinates: X is the column from the left and Y is the row from the top.</p>
-  <button type="button" class="quiet" id="loadMissionData">Load mission data</button><form id="route">
-    <fieldset class="coordinates-group start-coordinates">
-      <legend>Start point</legend>
-      <label>Start X <input id="sx" type="number" required min="0"></label>
-      <label>Start Y <input id="sy" type="number" required min="0"></label>
-    </fieldset>
-    <fieldset class="coordinates-group end-coordinates">
-      <legend>Destination</legend>
-      <label>End X <input id="ex" type="number" required min="0"></label>
-      <label>End Y <input id="ey" type="number" required min="0"></label>
-    </fieldset>
-    <label>Route <select id="profile"><option value="balanced">Balanced · 18° cap</option><option value="low-exposure">Lower slope · 10° cap</option><option value="shortest">Shortest · 22° cap</option></select></label>
-    <button class="primary" disabled>Find route</button><button type="button" class="quiet" id="resetDem" disabled>Reset</button>
-  </form>
-  <p id="result" role="status">Loading elevation data…</p>
-  <div id="dem-map" class="map has-real-terrain"><canvas hidden aria-label="Elevation map with route overlay"></canvas><div class="map-tools"><button type="button" id="dem-zoom-in" aria-label="Zoom in">+</button><button type="button" id="dem-zoom-out" aria-label="Zoom out">&minus;</button><button type="button" id="dem-reset" aria-label="Reset map">&#x2316;</button></div><div class="compass" aria-label="North">N<div>&uarr;</div></div><button type="button" id="dem-fullscreen" class="map-fullscreen" aria-label="Toggle fullscreen map" title="Toggle fullscreen map">&#x26F6;</button></div><div class="layer-bar" aria-label="DEM map layers"><span class="eyebrow">MAP LAYERS</span><button class="layer" data-dem-layer="contours" aria-pressed="false">◉ Topography</button><button class="layer" data-dem-layer="hazards" aria-pressed="false">△ Hazards</button><button class="layer" data-dem-layer="minerals" aria-pressed="false">◇ Minerals (simulated)</button><button class="layer" data-dem-layer="thermal" aria-pressed="false">☀ Thermal (simulated)</button><button type="button" class="info" id="dem-layer-info" aria-label="About DEM layers" aria-expanded="false">ⓘ</button></div><p id="dem-layer-notes" hidden>Topography shows 50 m elevation bands. Hazards mark slopes above 10° in amber and above 18° in red. Minerals and thermal are simulated overlays.</p>
-  <p><a href="https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic">USGS Mars 2020 CTX DEM</a>. Terrain slopes are calculated between elevation samples. Rocks and other hazards below the raster resolution are outside the model.</p>
-</section><footer><span><i class="live"></i> BUILT FOR THE NEXT GIANT LEAP.</span><span>Concept mission • Simulated layers & telemetry <button id="about">About this atlas ↗</button></span></footer></main></div><dialog id="modal"><button class="close" aria-label="Close dialog">×</button><div id="modalContent"></div></dialog><div id="toast" role="status"></div><script src="app.js?v=mission-fullscreen-tools"></script><script src="terrain.js?v=route-preflight"></script><script src="views.js?v=dem-controls"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#111513" />
+    <title>ARES / Field Atlas</title>
+    <link rel="stylesheet" href="style.css?v=mission-fullscreen-tools" />
+  </head>
+  <body>
+    <aside class="rail">
+      <a class="mark" href="./" aria-label="ARES home">A<span>•</span></a
+      ><button
+        class="rail-button active"
+        title="Field atlas"
+        aria-label="Field atlas"
+      >
+        ◎</button
+      ><button
+        class="rail-button"
+        id="scienceNav"
+        title="Science targets"
+        aria-label="Science targets"
+      >
+        ⚗</button
+      ><button
+        class="rail-button"
+        id="logNav"
+        title="Mission briefing"
+        aria-label="Mission briefing"
+      >
+        ▤
+      </button>
+      <div class="rail-bottom">M<br />A<br />R<br />S</div>
+    </aside>
+    <div class="workspace">
+      <header>
+        <div class="brand">Space<span>Byte</span></div>
+        <div class="header-status">
+          <span class="live"></span> EXPLORATION SIMULATOR
+          <span class="divider">|</span> SOL 048
+          <span class="time">09:42 LMST</span>
+        </div>
+        <div>
+          <button id="briefing" class="quiet">Mission briefing ↗</button>
+        </div>
+      </header>
+      <main>
+        <section class="heading">
+          <div>
+            <div class="eyebrow">
+              SURFACE OPERATIONS <span>/</span> MISSION 004
+            </div>
+            <h1>A little further. <em>A world to discover.</em></h1>
+            <p>Plan your traverse. Read the terrain. Make every step count.</p>
+          </div>
+          <button class="primary" id="export">↓ Export mission</button>
+        </section>
+        <div class="view-switch" role="tablist" aria-label="Atlas views">
+          <button
+            type="button"
+            class="quiet"
+            id="mission-view"
+            role="tab"
+            aria-selected="true"
+            aria-controls="mission-panel"
+          >
+            Mission simulation</button
+          ><button
+            type="button"
+            class="quiet"
+            id="dem-view"
+            role="tab"
+            aria-selected="false"
+            tabindex="-1"
+            aria-controls="dem-panel"
+          >
+            DEM routing
+          </button>
+        </div>
+        <section
+          class="dashboard"
+          id="mission-panel"
+          role="tabpanel"
+          aria-labelledby="mission-view"
+        >
+          <div class="map-column">
+            <div class="map-top">
+              <div>
+                <span class="live"></span><strong>Jezero Crater</strong
+                ><span class="coordinates">18.44° N &nbsp; 77.45° E</span>
+              </div>
+              <span class="tag">MARS / SECTOR 07</span>
+            </div>
+            <div class="map" id="map">
+              <svg
+                id="terrain"
+                viewBox="0 0 1000 700"
+                role="img"
+                aria-label="Illustrative Jezero terrain with selectable mission waypoints"
+              >
+                <defs>
+                  <radialGradient id="ground">
+                    <stop stop-color="#947a5b" />
+                    <stop offset="1" stop-color="#413d30" />
+                  </radialGradient>
+                  <filter id="rough">
+                    <feTurbulence
+                      type="fractalNoise"
+                      baseFrequency=".035"
+                      numOctaves="5"
+                      seed="8"
+                    />
+                    <feColorMatrix type="saturate" values="0" />
+                    <feBlend in="SourceGraphic" mode="multiply" />
+                  </filter>
+                  <pattern
+                    id="grid"
+                    width="100"
+                    height="100"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <path
+                      d="M100 0H0V100"
+                      fill="none"
+                      stroke="#e3d7b6"
+                      stroke-opacity=".1"
+                    />
+                  </pattern>
+                </defs>
+                <g id="mapWorld">
+                  <g id="terrainFallback">
+                    <rect width="1000" height="700" fill="url(#ground)" />
+                    <rect
+                      width="1000"
+                      height="700"
+                      fill="#a99b7e"
+                      filter="url(#rough)"
+                      opacity=".65"
+                    />
+                  </g>
+                  <g id="contours"></g>
+                  <rect width="1000" height="700" fill="url(#grid)" />
+                  <g id="hazards">
+                    <path
+                      d="M620 140L780 180 850 310 742 350 650 260Z"
+                      fill="#c27c50"
+                      fill-opacity=".17"
+                      stroke="#d8a177"
+                      stroke-dasharray="5 7"
+                    />
+                    <text x="703" y="245" class="map-label">
+                      △ STEEP TERRAIN
+                    </text>
+                  </g>
+                  <g id="thermal" hidden>
+                    <ellipse
+                      cx="440"
+                      cy="370"
+                      rx="240"
+                      ry="170"
+                      fill="#e8a23f"
+                      opacity=".18"
+                    />
+                    <ellipse
+                      cx="730"
+                      cy="260"
+                      rx="120"
+                      ry="150"
+                      fill="#bf573b"
+                      opacity=".25"
+                    />
+                  </g>
+                  <g id="minerals" hidden>
+                    <path
+                      d="M180 220L340 170 580 310 500 390 270 330Z"
+                      fill="#85c3b0"
+                      opacity=".22"
+                      stroke="#b1e5cb"
+                      stroke-dasharray="6 5"
+                    />
+                  </g>
+                  <text x="145" y="180" class="terrain-label">
+                    WESTERN DELTA
+                  </text>
+                  <text x="660" y="560" class="terrain-label">SÉÍTAH</text>
+                  <text x="75" y="590" class="terrain-label small">
+                    JEZERO FLOOR
+                  </text>
+                  <path
+                    id="routeLine"
+                    d="M240 520L340 410 475 320 590 390"
+                    fill="none"
+                    stroke="#d9f897"
+                    stroke-width="3"
+                    stroke-dasharray="8 6"
+                  />
+                  <g id="pins"></g>
+                </g>
+              </svg>
+              <div class="map-badge">
+                <span class="live"></span> ORBITAL VIEW
+                <span> / </span> ILLUSTRATIVE FALLBACK
+              </div>
+              <div class="map-tools">
+                <button id="zoomIn" aria-label="Zoom in">+</button
+                ><button id="zoomOut" aria-label="Zoom out">−</button
+                ><button id="resetMap" aria-label="Reset map">⌖</button>
+              </div>
+              <div class="compass">
+                N
+                <div>↑</div>
+              </div>
+              <div class="scale">
+                └────────┘<br /><span id="scaleLabel">500 m</span>
+              </div>
+              <button
+                type="button"
+                class="map-fullscreen"
+                id="fullscreenMap"
+                aria-label="Fullscreen map"
+                aria-pressed="false"
+                title="Fullscreen map"
+              >
+                &#x26F6;
+              </button>
+              <div class="map-caption">JEZERO QUADRANGLE <span></span></div>
+              <div id="targetCard" class="target-card">
+                <div class="eyebrow">SCIENCE WAYPOINT 02 <span>↗</span></div>
+                <h3>Delta outcrop</h3>
+                <p>Ancient sediments. New possibilities.</p>
+                <div>
+                  <span class="dot mint"></span> High science value
+                  <span>+ 25 min</span>
+                </div>
+              </div>
+            </div>
+            <div class="layer-bar">
+              <span class="eyebrow">MAP LAYERS</span
+              ><button class="layer active" data-layer="contours">
+                ◉ Topography</button
+              ><button class="layer active" data-layer="hazards">
+                △ Hazards</button
+              ><button class="layer" data-layer="minerals">◇ Minerals</button
+              ><button class="layer" data-layer="thermal">☀ Thermal</button
+              ><button class="info" id="sources" aria-label="Data sources">
+                ⓘ
+              </button>
+            </div>
+            <div class="conditions">
+              <div class="conditions-title">
+                <span class="eyebrow">SURFACE CONDITIONS</span
+                ><span>Simulated • Sol 048</span>
+              </div>
+              <div class="condition-grid">
+                <div>
+                  <span>☀ &nbsp; TEMPERATURE</span
+                  ><strong>−63<small>°C</small></strong>
+                  <p>Cold, clear conditions</p>
+                </div>
+                <div>
+                  <span>≋ &nbsp; WIND SPEED</span
+                  ><strong>12<small>km/h</small></strong>
+                  <p>From the northwest</p>
+                </div>
+                <div>
+                  <span>◌ &nbsp; RADIATION</span
+                  ><strong>0.24<small>mSv/day</small></strong>
+                  <p><i></i> Demo baseline</p>
+                </div>
+                <div>
+                  <span>◐ &nbsp; DAYLIGHT LEFT</span
+                  ><strong>08<small>h</small> 16<small>m</small></strong>
+                  <p>Sunset at 17:58 LMST</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="planner">
+            <div class="planner-title">
+              <div class="eyebrow">YOUR NEXT FRONTIER</div>
+              <h2>Traverse planner <span>↗</span></h2>
+              <p>A good mission starts with a better route.</p>
+            </div>
+            <div class="route-mode">
+              <button class="selected" data-mode="balanced">Balanced</button
+              ><button data-mode="safe">Low exposure</button
+              ><button data-mode="science">Science first</button>
+            </div>
+            <div class="route-heading">
+              <span>MISSION WAYPOINTS</span><span id="stopCount">04 STOPS</span>
+            </div>
+            <div id="waypoints"></div>
+            <div class="waypoint-actions">
+              <button type="button" class="quiet" id="customWaypoint">
+                Add custom stop</button
+              ><button type="button" class="quiet" id="editWaypoint">
+                Edit selected
+              </button>
+            </div>
+            <p class="waypoint-help">
+              Select a stop to edit it, or drag a map marker to move it.
+            </p>
+            <button id="add" class="add-stop">+ Add science waypoint</button
+            ><button
+              type="button"
+              class="add-stop"
+              id="calculateMission"
+              style="margin-top: 8px"
+            >
+              Calculate route
+            </button>
+            <div class="waypoint-actions" style="margin-top: 8px">
+              <button type="button" class="quiet" id="stopMission" disabled>
+                Stop</button
+              ><button type="button" class="quiet" id="resetMission" disabled>
+                Reset
+              </button>
+            </div>
+            <div class="route-stats">
+              <div>
+                <span>Distance</span
+                ><strong id="distance">2.4 <small>km</small></strong>
+              </div>
+              <div>
+                <span>Est. duration</span><strong id="duration">2h 15m</strong>
+              </div>
+              <div>
+                <span>Science value</span
+                ><strong id="value" class="green">High <small>↗</small></strong>
+              </div>
+              <div>
+                <span>Max. slope</span
+                ><strong id="slope">12 <small>°</small></strong>
+              </div>
+            </div>
+            <div class="advisory">
+              <span>◈</span>
+              <div>
+                <strong id="advisoryTitle">Room to explore.</strong>
+                <p id="advisoryText">
+                  This route keeps a 35% oxygen reserve for your return to
+                  habitat.
+                </p>
+              </div>
+            </div>
+            <button class="primary start" id="start">
+              Start mission preview <span>→</span>
+            </button>
+            <div class="planner-foot">
+              ◷ &nbsp; Your plan is saved on this device
+            </div>
+          </aside>
+        </section>
+        <section
+          id="dem-panel"
+          role="tabpanel"
+          hidden
+          aria-labelledby="dem-view"
+        >
+          <h2>Jezero terrain routing</h2>
+          <p>
+            Click the map to place the blue start point, then the green
+            destination. You can also enter grid coordinates: X is the column
+            from the left and Y is the row from the top.
+          </p>
+          <button type="button" class="quiet" id="loadMissionData">
+            Load mission data
+          </button>
+          <form id="route">
+            <fieldset class="coordinates-group start-coordinates">
+              <legend>Start point</legend>
+              <label
+                >Start X <input id="sx" type="number" required min="0"
+              /></label>
+              <label
+                >Start Y <input id="sy" type="number" required min="0"
+              /></label>
+            </fieldset>
+            <fieldset class="coordinates-group end-coordinates">
+              <legend>Destination</legend>
+              <label
+                >End X <input id="ex" type="number" required min="0"
+              /></label>
+              <label
+                >End Y <input id="ey" type="number" required min="0"
+              /></label>
+            </fieldset>
+            <label
+              >Route
+              <select id="profile">
+                <option value="balanced">Balanced · 18° cap</option>
+                <option value="low-exposure">Lower slope · 10° cap</option>
+                <option value="shortest">Shortest · 22° cap</option>
+              </select></label
+            >
+            <button class="primary" disabled>Find route</button
+            ><button type="button" class="quiet" id="resetDem" disabled>
+              Reset
+            </button>
+          </form>
+          <p id="result" role="status">Loading elevation data…</p>
+          <div id="dem-map" class="map has-real-terrain">
+            <canvas
+              hidden
+              aria-label="Elevation map with route overlay"
+            ></canvas>
+            <div class="map-tools">
+              <button type="button" id="dem-zoom-in" aria-label="Zoom in">
+                +</button
+              ><button type="button" id="dem-zoom-out" aria-label="Zoom out">
+                &minus;</button
+              ><button type="button" id="dem-reset" aria-label="Reset map">
+                &#x2316;
+              </button>
+            </div>
+            <div class="compass" aria-label="North">
+              N
+              <div>&uarr;</div>
+            </div>
+            <button
+              type="button"
+              id="dem-fullscreen"
+              class="map-fullscreen"
+              aria-label="Toggle fullscreen map"
+              title="Toggle fullscreen map"
+            >
+              &#x26F6;
+            </button>
+          </div>
+          <div class="layer-bar" aria-label="DEM map layers">
+            <span class="eyebrow">MAP LAYERS</span
+            ><button
+              class="layer"
+              data-dem-layer="contours"
+              aria-pressed="false"
+            >
+              ◉ Topography</button
+            ><button
+              class="layer"
+              data-dem-layer="hazards"
+              aria-pressed="false"
+            >
+              △ Hazards</button
+            ><button
+              class="layer"
+              data-dem-layer="minerals"
+              aria-pressed="false"
+            >
+              ◇ Minerals (simulated)</button
+            ><button
+              class="layer"
+              data-dem-layer="thermal"
+              aria-pressed="false"
+            >
+              ☀ Thermal (simulated)</button
+            ><button
+              type="button"
+              class="info"
+              id="dem-layer-info"
+              aria-label="About DEM layers"
+              aria-expanded="false"
+            >
+              ⓘ
+            </button>
+          </div>
+          <p id="dem-layer-notes" hidden>
+            Topography displays interpolated elevation contours at 50 m
+            intervals, with major contours every 250 m. Hazards mark slopes
+            above 10° in amber and above 18° in red. Minerals and thermal are
+            simulated overlays.
+          </p>
+          <p>
+            <a
+              href="https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic"
+              >USGS Mars 2020 CTX DEM</a
+            >. Terrain slopes are calculated between elevation samples. Rocks
+            and other hazards below the raster resolution are outside the model.
+          </p>
+        </section>
+        <footer>
+          <span><i class="live"></i> BUILT FOR THE NEXT GIANT LEAP.</span
+          ><span
+            >Concept mission • Simulated layers & telemetry
+            <button id="about">About this atlas ↗</button></span
+          >
+        </footer>
+      </main>
+    </div>
+    <dialog id="modal">
+      <button class="close" aria-label="Close dialog">×</button>
+      <div id="modalContent"></div>
+    </dialog>
+    <div id="toast" role="status"></div>
+    <script src="app.js?v=mission-fullscreen-tools"></script>
+    <script src="terrain.js?v=route-preflight"></script>
+    <script src="views.js?v=dem-controls"></script>
+  </body>
+</html>
