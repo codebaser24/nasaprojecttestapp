@@ -2,7 +2,7 @@
 
 A responsive, dependency-free Marswalk planning prototype inspired by the Martian Map challenge. Open `dist/index.html` in a browser, or serve `dist` with any static HTTP server.
 
-Features: procedural  orbital terrain, four toggleable data layers, selectable science waypoints, three route strategies, extra science stops, local plan persistence, mission JSON export, and a step-through mission preview. Responsive desktop and mobile layouts include keyboard-operable controls.
+Features: procedural orbital terrain, four toggleable data layers, selectable science waypoints, three route strategies, extra science stops, local plan persistence, mission JSON export, and a step-through mission preview. Responsive desktop and mobile layouts include keyboard-operable controls.
 
 Both dashboard tabs use the full 4,456 × 5,067 Jezero DEM. **Mission simulation** retains the original waypoint locations and routes each leg through the full raster. **DEM routing** accepts full-raster column and row coordinates and reports distance, ascent, and maximum slope.
 
