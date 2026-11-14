@@ -1,0 +1,22 @@
+{
+  "source": "M20_JezeroCrater_CTXDEM_20m.tif",
+  "method": "Maximum absolute slope to valid neighboring DEM pixels",
+  "units": "degrees",
+  "pixel_spacing_m": [
+    20.0,
+    20.0
+  ],
+  "thresholds_deg": {
+    "moderate_above": 10.0,
+    "steep_above": 18.0,
+    "very_steep_above": 22.0
+  },
+  "classes": {
+    "low": 17384372,
+    "moderate": 3464201,
+    "steep": 642844,
+    "very_steep": 1073158,
+    "unknown": 13977
+  },
+  "notes": "The overlay represents local slope exposure, not guaranteed rover traversability. Unknown terrain is tracked separately from low-slope terrain."
+}
