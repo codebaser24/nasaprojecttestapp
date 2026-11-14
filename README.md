@@ -12,7 +12,6 @@ Use the full `M20_JezeroCrater_CTXDEM_20m.tif` in this directory. If it is missi
 
 ```powershell
 python -m pip install rasterio
-python -m pip install rasterio
 python prepare_dem.py M20_JezeroCrater_CTXDEM_20m.tif
 python prepare_full_dem.py M20_JezeroCrater_CTXDEM_20m.tif
 python server.py
