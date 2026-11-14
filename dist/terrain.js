@@ -8,19 +8,27 @@ const endColor = theme.getPropertyValue("--end-marker").trim();
 const submit = form.querySelector("button");
 const resetDem = document.getElementById("resetDem");
 let demRequest;
-const fields = ["sx", "sy", "ex", "ey"].map(id => document.getElementById(id));
-let grid, base, start, goal, path = [];
+const fields = ["sx", "sy", "ex", "ey"].map((id) =>
+  document.getElementById(id),
+);
+let grid,
+  base,
+  start,
+  goal,
+  path = [];
 let choosingStart = true;
 let loadedMission = [];
 let loadedLegs = [];
-let demZoom = 1, demX = 0, demY = 0;
+let demZoom = 1,
+  demX = 0,
+  demY = 0;
 const demLayers = new Set();
 const demOverlays = {};
 
 function setDemZoom(value) {
   demZoom = Math.min(12, Math.max(1, value));
-  const limitX = canvas.width * (demZoom - 0.5) / 2;
-  const limitY = canvas.height * (demZoom - 0.5) / 2;
+  const limitX = (canvas.width * (demZoom - 0.5)) / 2;
+  const limitY = (canvas.height * (demZoom - 0.5)) / 2;
   demX = Math.max(-limitX, Math.min(limitX, demX));
   demY = Math.max(-limitY, Math.min(limitY, demY));
   if (grid) draw();
@@ -29,7 +37,8 @@ function setDemZoom(value) {
 async function request(url, options) {
   const response = await fetch(url, options);
   const payload = await response.json();
-  if (!response.ok) throw Object.assign(new Error(payload.error), {code: payload.code});
+  if (!response.ok)
+    throw Object.assign(new Error(payload.error), { code: payload.code });
   return payload;
 }
 
@@ -43,7 +52,8 @@ function draw() {
   context.drawImage(base, 0, 0);
   for (const layer of demLayers) {
     const overlay = demOverlays[layer];
-    if (overlay?.complete && overlay.naturalWidth) context.drawImage(overlay, 0, 0);
+    if (overlay?.complete && overlay.naturalWidth)
+      context.drawImage(overlay, 0, 0);
   }
   context.save();
   context.scale(canvas.width / 1000, canvas.height / 700);
@@ -85,9 +95,13 @@ function draw() {
     context.textBaseline = "middle";
     context.fillText(index ? String(index) : "⌂", x + 0.5, y + 0.5);
   });
-  for (const [point, color] of [[start, startColor], [goal, endColor]]) {
+  for (const [point, color] of [
+    [start, startColor],
+    [goal, endColor],
+  ]) {
     if (!point) continue;
-    if (loadedMission.some(([x, y]) => point[0] === x && point[1] === y)) continue;
+    if (loadedMission.some(([x, y]) => point[0] === x && point[1] === y))
+      continue;
     context.fillStyle = color;
     context.beginPath();
     context.arc(point[0] + 0.5, point[1] + 0.5, 5 * scale, 0, Math.PI * 2);
@@ -103,8 +117,10 @@ function showSlopeHazards() {
   setTerrainImage(document.getElementById("hazards"), "jezero-hazards.png");
   const legend = document.createElement("div");
   legend.className = "slope-legend";
-  legend.innerHTML = '<strong>DEM slope hazards</strong><span><i class="slope-moderate"></i> &gt;10°–18°</span><span><i class="slope-steep"></i> &gt;18°</span>';
-  legend.title = "Maximum slope to a neighboring DEM cell. Unshaded cells may still contain smaller hazards.";
+  legend.innerHTML =
+    '<strong>DEM slope hazards</strong><span><i class="slope-moderate"></i> &gt;10°–18°</span><span><i class="slope-steep"></i> &gt;18°</span>';
+  legend.title =
+    "Maximum slope to a neighboring DEM cell. Unshaded cells may still contain smaller hazards.";
   document.getElementById("map").append(legend);
 }
 
@@ -112,17 +128,28 @@ let missionRouteRequest;
 let missionDemSummary = null;
 let calculatedPlan;
 let calculatedDisplay;
-const routeDisplayIds = ["distance", "duration", "slope", "advisoryTitle", "advisoryText"];
+const routeDisplayIds = [
+  "distance",
+  "duration",
+  "slope",
+  "advisoryTitle",
+  "advisoryText",
+];
 function missionPlanKey() {
-  return JSON.stringify([state.mode, state.ids.map(id => {
-    const point = catalog.find(entry => entry.id === id);
-    return [id, point.x, point.y];
-  })]);
+  return JSON.stringify([
+    state.mode,
+    state.ids.map((id) => {
+      const point = catalog.find((entry) => entry.id === id);
+      return [id, point.x, point.y];
+    }),
+  ]);
 }
 
 function refreshMissionRouteDisplay() {
   if (calculatedPlan === missionPlanKey() && calculatedDisplay) {
-    document.getElementById("routeLine").setAttribute("d", calculatedDisplay.path);
+    document
+      .getElementById("routeLine")
+      .setAttribute("d", calculatedDisplay.path);
     routeDisplayIds.forEach((id, index) => {
       document.getElementById(id).textContent = calculatedDisplay.fields[index];
     });
@@ -137,11 +164,13 @@ function refreshMissionRouteDisplay() {
   stopMission.disabled = true;
   resetMission.disabled = true;
   document.getElementById("routeLine").setAttribute("d", "");
-  for (const id of ["distance", "duration", "slope"]) document.getElementById(id).textContent = "—";
+  for (const id of ["distance", "duration", "slope"])
+    document.getElementById(id).textContent = "—";
   document.getElementById("advisoryTitle").textContent = "Route not calculated";
-  document.getElementById("advisoryText").textContent = state.ids.length < 2
-    ? "Add a waypoint to plan a route."
-    : "Arrange your waypoints, then click Calculate route.";
+  document.getElementById("advisoryText").textContent =
+    state.ids.length < 2
+      ? "Add a waypoint to plan a route."
+      : "Arrange your waypoints, then click Calculate route.";
 }
 
 const calculateMission = document.getElementById("calculateMission");
@@ -151,15 +180,25 @@ document.getElementById("loadMissionData").onclick = () => {
     return;
   }
   clearDemRoute();
-  loadedMission = state.ids.map(id => {
-    const point = catalog.find(entry => entry.id === id);
-    return [Math.floor(point.x / 1000 * grid.width), Math.floor(point.y / 700 * grid.height)];
+  loadedMission = state.ids.map((id) => {
+    const point = catalog.find((entry) => entry.id === id);
+    return [
+      Math.floor((point.x / 1000) * grid.width),
+      Math.floor((point.y / 700) * grid.height),
+    ];
   });
   loadedLegs = missionDemSummary?.legs || [];
   start = loadedMission[0];
-  goal = loadedMission.length > 1 ? loadedMission[loadedMission.length - 1] : null;
-  fields.forEach((field, index) => field.value = [...start, ...(goal || ["", ""])][index]);
-  document.getElementById("profile").value = {balanced: "balanced", safe: "low-exposure", science: "shortest"}[state.mode];
+  goal =
+    loadedMission.length > 1 ? loadedMission[loadedMission.length - 1] : null;
+  fields.forEach(
+    (field, index) => (field.value = [...start, ...(goal || ["", ""])][index]),
+  );
+  document.getElementById("profile").value = {
+    balanced: "balanced",
+    safe: "low-exposure",
+    science: "shortest",
+  }[state.mode];
   path = [];
   choosingStart = true;
   demX = demY = 0;
@@ -177,12 +216,14 @@ resetMission.onclick = clearMissionCalculation;
 stopMission.onclick = () => {
   clearMissionCalculation();
   document.getElementById("advisoryTitle").textContent = "Calculation stopped";
-  document.getElementById("advisoryText").textContent = "Click Calculate route to try again.";
+  document.getElementById("advisoryText").textContent =
+    "Click Calculate route to try again.";
 };
 calculateMission.onclick = () => {
   if (!grid) {
     document.getElementById("advisoryTitle").textContent = "DEM not loaded";
-    document.getElementById("advisoryText").textContent = "Open the dashboard through the local server and reload to load the elevation data.";
+    document.getElementById("advisoryText").textContent =
+      "Open the dashboard through the local server and reload to load the elevation data.";
     return;
   }
   routeMissionOnDem();
@@ -200,12 +241,18 @@ async function routeMissionOnDem() {
   const title = document.getElementById("advisoryTitle");
   const distance = document.getElementById("distance");
   const slope = document.getElementById("slope");
-  const points = state.ids.map(id => catalog.find(point => point.id === id));
-  const cells = [...points, points[0]].map(point => [
-    Math.floor(point.x / 1000 * grid.width),
-    Math.floor(point.y / 700 * grid.height)
+  const points = state.ids.map((id) =>
+    catalog.find((point) => point.id === id),
+  );
+  const cells = [...points, points[0]].map((point) => [
+    Math.floor((point.x / 1000) * grid.width),
+    Math.floor((point.y / 700) * grid.height),
   ]);
-  const profile = {balanced: "balanced", safe: "low-exposure", science: "shortest"}[state.mode];
+  const profile = {
+    balanced: "balanced",
+    safe: "low-exposure",
+    science: "shortest",
+  }[state.mode];
   routeLine.setAttribute("d", "");
   distance.textContent = "—";
   slope.textContent = "—";
@@ -219,7 +266,9 @@ async function routeMissionOnDem() {
   function rememberDisplay() {
     calculatedDisplay = {
       path: routeLine.getAttribute("d"),
-      fields: routeDisplayIds.map(id => document.getElementById(id).textContent)
+      fields: routeDisplayIds.map(
+        (id) => document.getElementById(id).textContent,
+      ),
     };
   }
   rememberDisplay();
@@ -228,21 +277,33 @@ async function routeMissionOnDem() {
     // Bound memory use by keeping only one full-raster search in flight per mission.
     for (const [index, goal] of cells.slice(1).entries()) {
       const leg = await request("/api/route", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full"}),
-      signal: controller.signal
-    }).catch(error => {
-      throw new Error(`${points[index].name} → ${(points[index + 1] || points[0]).name}: ${error.message}`);
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start: cells[index],
+          goal,
+          profile,
+          coverage: "full",
+        }),
+        signal: controller.signal,
+      }).catch((error) => {
+        throw new Error(
+          `${points[index].name} → ${(points[index + 1] || points[0]).name}: ${error.message}`,
+        );
       });
       if (controller.signal.aborted) return;
       legs.push(leg);
-      calculateMission.textContent = `Calculating route… ${Math.floor(100 * legs.length / (cells.length - 1))}%`;
+      calculateMission.textContent = `Calculating route… ${Math.floor((100 * legs.length) / (cells.length - 1))}%`;
     }
     if (controller.signal.aborted) return;
-    const path = legs.flatMap(leg => leg.path.map(([x, y], index) =>
-      `${index ? "L" : "M"}${(x + 0.5) / grid.width * 1000} ${(y + 0.5) / grid.height * 700}`
-    )).join(" ");
+    const path = legs
+      .flatMap((leg) =>
+        leg.path.map(
+          ([x, y], index) =>
+            `${index ? "L" : "M"}${((x + 0.5) / grid.width) * 1000} ${((y + 0.5) / grid.height) * 700}`,
+        ),
+      )
+      .join(" ");
     routeLine.setAttribute("d", path);
     const total = legs.reduce((sum, leg) => sum + leg.distanceM, 0);
     missionDemSummary = {
@@ -250,15 +311,15 @@ async function routeMissionOnDem() {
       profile,
       distanceM: total,
       ascentM: legs.reduce((sum, leg) => sum + leg.ascentM, 0),
-      maxSlopeDeg: Math.max(...legs.map(leg => leg.maxSlopeDeg)),
-      legs
+      maxSlopeDeg: Math.max(...legs.map((leg) => leg.maxSlopeDeg)),
+      legs,
     };
     distance.innerHTML = `${(total / 1000).toFixed(2)} <small>km</small>`;
-    slope.innerHTML = `${Math.max(...legs.map(leg => leg.maxSlopeDeg)).toFixed(1)} <small>°</small>`;
+    slope.innerHTML = `${Math.max(...legs.map((leg) => leg.maxSlopeDeg)).toFixed(1)} <small>°</small>`;
     title.textContent = "DEM route calculated";
     status.textContent = `${legs.length} legs including return · ${legs.reduce((sum, leg) => sum + leg.ascentM, 0)} m total ascent. Duration and oxygen require a separate model.`;
     rememberDisplay();
-    await new Promise(resolve => setTimeout(resolve, 450));
+    await new Promise((resolve) => setTimeout(resolve, 450));
   } catch (error) {
     if (controller.signal.aborted) return;
     title.textContent = "Mission route unavailable";
@@ -286,7 +347,7 @@ function setTerrainImage(target, url, replace = false) {
 function showMissionTerrain() {
   const world = document.getElementById("mapWorld");
   const svg = document.getElementById("terrain");
-  const frameHeight = 1000 * grid.height / grid.width;
+  const frameHeight = (1000 * grid.height) / grid.width;
   svg.setAttribute("viewBox", `0 0 1000 ${frameHeight}`);
   const frame = document.createElementNS(world.namespaceURI, "g");
   frame.setAttribute("transform", `scale(1 ${frameHeight / 700})`);
@@ -294,38 +355,83 @@ function showMissionTerrain() {
   frame.append(world);
   for (const point of catalog) {
     if (point.id.startsWith("custom-")) continue;
-    point.x = (grid.cropOrigin[0] + Math.floor(point.x / 1000 * 240) + 0.5) / grid.width * 1000;
-    point.y = (grid.cropOrigin[1] + Math.floor(point.y / 700 * 168) + 0.5) / grid.height * 700;
+    point.x =
+      ((grid.cropOrigin[0] + Math.floor((point.x / 1000) * 240) + 0.5) /
+        grid.width) *
+      1000;
+    point.y =
+      ((grid.cropOrigin[1] + Math.floor((point.y / 700) * 168) + 0.5) /
+        grid.height) *
+      700;
   }
   applyWaypointEdits();
   setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
   setTerrainImage(document.getElementById("contours"), "jezero-contours.png");
   document.getElementById("map").classList.add("has-real-terrain");
-  world.querySelectorAll(".terrain-label").forEach(label => label.remove());
+  world.querySelectorAll(".terrain-label").forEach((label) => label.remove());
   document.querySelector("#map .scale").hidden = true;
-  document.querySelector(".map-badge").innerHTML = '<span class="live"></span> JEZERO CTX DEM / SIMULATED MISSION';
-  document.querySelector(".map-caption").textContent = "USGS MARS 2020 CTX DEM · 20 M/PIXEL";
+  document.querySelector(".map-badge").innerHTML =
+    '<span class="live"></span> JEZERO CTX DEM / SIMULATED MISSION';
+  document.querySelector(".map-caption").textContent =
+    "USGS MARS 2020 CTX DEM · 20 M/PIXEL";
   document.querySelector(".coordinates").textContent = "18.47° N · 77.40° E";
-  document.getElementById("terrain").setAttribute("aria-label", "Jezero elevation map with simulated mission waypoints");
+  document
+    .getElementById("terrain")
+    .setAttribute(
+      "aria-label",
+      "Jezero elevation map with simulated mission waypoints",
+    );
   showSlopeHazards();
   updateMapTransform();
   render();
 }
 
 async function init() {
-  if (location.protocol === "file:") throw new Error("Start python server.py and open the HTTP address it prints.");
+  if (location.protocol === "file:")
+    throw new Error(
+      "Start python server.py and open the HTTP address it prints.",
+    );
   const metadata = await request("jezero-full.json");
   base = new Image();
-  base.src = "jezero-full.png";
+  // Use the native-resolution CTX elevation visualization.
+  // The source DEM and routing calculations remain unchanged.
+  base.src = "jezero-elevation.png";
   await base.decode();
-  if (!Array.isArray(metadata.cropOrigin)) throw new Error("Full DEM preparation is required.");
+  // Display the actual elevation range from the CTX DEM metadata.
+  // The colour scale describes elevation, not surface composition.
+  const legend = document.createElement("div");
+  legend.className = "elevation-legend";
+
+  const legendTitle = document.createElement("strong");
+  legendTitle.textContent = "Elevation (m)";
+
+  const legendGradient = document.createElement("div");
+  legendGradient.className = "elevation-gradient";
+
+  const legendLabels = document.createElement("div");
+  legendLabels.className = "elevation-labels";
+
+  const lowLabel = document.createElement("span");
+  lowLabel.textContent = `${Math.round(metadata.minimum).toLocaleString()} m`;
+
+  const highLabel = document.createElement("span");
+  highLabel.textContent = `${Math.round(metadata.maximum).toLocaleString()} m`;
+
+  legendLabels.append(lowLabel, highLabel);
+  legend.append(legendTitle, legendGradient, legendLabels);
+
+  document.getElementById("dem-map").appendChild(legend);
+  if (!Array.isArray(metadata.cropOrigin))
+    throw new Error("Full DEM preparation is required.");
   grid = metadata;
   canvas.width = grid.width;
   canvas.height = grid.height;
-  fields.forEach((field, i) => field.max = (i % 2 ? grid.height : grid.width) - 1);
+  fields.forEach(
+    (field, i) => (field.max = (i % 2 ? grid.height : grid.width) - 1),
+  );
   start = [grid.cropOrigin[0] + 40, grid.cropOrigin[1] + 80];
   goal = [grid.cropOrigin[0] + 190, grid.cropOrigin[1] + 100];
-  [...start, ...goal].forEach((value, index) => fields[index].value = value);
+  [...start, ...goal].forEach((value, index) => (fields[index].value = value));
   showMissionTerrain();
   canvas.hidden = false;
   draw();
@@ -334,14 +440,22 @@ async function init() {
 }
 
 let demDragged = false;
-canvas.onclick = event => {
+canvas.onclick = (event) => {
   if (submit.disabled || demDragged) return;
   const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width * grid.width;
-  const y = (event.clientY - rect.top) / rect.height * grid.height;
-  const point = [Math.floor((x - grid.width / 2 - demX) / demZoom + grid.width / 2),
-    Math.floor((y - grid.height / 2 - demY) / demZoom + grid.height / 2)];
-  if (point[0] < 0 || point[0] >= grid.width || point[1] < 0 || point[1] >= grid.height) return;
+  const x = ((event.clientX - rect.left) / rect.width) * grid.width;
+  const y = ((event.clientY - rect.top) / rect.height) * grid.height;
+  const point = [
+    Math.floor((x - grid.width / 2 - demX) / demZoom + grid.width / 2),
+    Math.floor((y - grid.height / 2 - demY) / demZoom + grid.height / 2),
+  ];
+  if (
+    point[0] < 0 ||
+    point[0] >= grid.width ||
+    point[1] < 0 ||
+    point[1] >= grid.height
+  )
+    return;
   if (choosingStart) {
     start = point;
     fields[0].value = point[0];
@@ -353,7 +467,9 @@ canvas.onclick = event => {
   }
   choosingStart = !choosingStart;
   path = [];
-  result.textContent = choosingStart ? "Ready to find a route." : "Choose the destination.";
+  result.textContent = choosingStart
+    ? "Ready to find a route."
+    : "Choose the destination.";
   draw();
 };
 
@@ -383,30 +499,37 @@ function confirmLongRoute(distanceKm) {
     <button class="primary" value="continue">Continue</button>
   </form>`;
   (document.fullscreenElement || document.body).append(dialog);
-  return new Promise(resolve => {
-    dialog.addEventListener("close", () => {
-      const approved = dialog.returnValue === "continue";
-      dialog.remove();
-      resolve(approved);
-    }, {once: true});
+  return new Promise((resolve) => {
+    dialog.addEventListener(
+      "close",
+      () => {
+        const approved = dialog.returnValue === "continue";
+        dialog.remove();
+        resolve(approved);
+      },
+      { once: true },
+    );
     dialog.showModal();
   });
 }
 
 let confirmingDemRoute = false;
-form.onsubmit = async event => {
+form.onsubmit = async (event) => {
   event.preventDefault();
   if (!grid || demRequest || confirmingDemRoute) return;
-  const nextStart = fields.slice(0, 2).map(field => field.valueAsNumber);
-  const nextGoal = fields.slice(2).map(field => field.valueAsNumber);
+  const nextStart = fields.slice(0, 2).map((field) => field.valueAsNumber);
+  const nextGoal = fields.slice(2).map((field) => field.valueAsNumber);
   const profile = document.getElementById("profile").value;
-  const distanceKm = Math.hypot((nextGoal[0] - nextStart[0]) * grid.dx,
-    (nextGoal[1] - nextStart[1]) * grid.dy) / 1000;
+  const distanceKm =
+    Math.hypot(
+      (nextGoal[0] - nextStart[0]) * grid.dx,
+      (nextGoal[1] - nextStart[1]) * grid.dy,
+    ) / 1000;
   const extended = distanceKm >= longRouteThresholdKm;
   if (extended) {
     confirmingDemRoute = true;
     try {
-      if (!await confirmLongRoute(distanceKm)) return;
+      if (!(await confirmLongRoute(distanceKm))) return;
     } finally {
       confirmingDemRoute = false;
     }
@@ -426,16 +549,24 @@ form.onsubmit = async event => {
       clearInterval(timer);
       return;
     }
-    const estimated = Math.floor(95 * (1 - Math.exp(-(performance.now() - started) / 3500)));
+    const estimated = Math.floor(
+      95 * (1 - Math.exp(-(performance.now() - started) / 3500)),
+    );
     submit.textContent = `Finding route… ~${estimated}%`;
   }, 200);
   result.textContent = "Calculating route…";
   try {
-      const route = await request("/api/route", {
+    const route = await request("/api/route", {
       method: "POST",
       signal: controller.signal,
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start, goal, profile, coverage: "full", extended})
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start,
+        goal,
+        profile,
+        coverage: "full",
+        extended,
+      }),
     });
     if (demRequest !== controller) return;
     clearInterval(timer);
@@ -443,7 +574,7 @@ form.onsubmit = async event => {
     path = route.path;
     draw();
     result.textContent = `${route.distanceM} m distance · ${route.ascentM} m ascent · ${route.maxSlopeDeg}° maximum slope`;
-    await new Promise(resolve => setTimeout(resolve, 450));
+    await new Promise((resolve) => setTimeout(resolve, 450));
   } catch (error) {
     if (demRequest === controller) result.textContent = error.message;
   } finally {
@@ -456,7 +587,9 @@ form.onsubmit = async event => {
   }
 };
 
-new ResizeObserver(() => { if (grid && canvas.clientWidth) draw(); }).observe(canvas);
+new ResizeObserver(() => {
+  if (grid && canvas.clientWidth) draw();
+}).observe(canvas);
 const demMap = document.getElementById("dem-map");
 const demFullscreen = document.getElementById("dem-fullscreen");
 const demFullscreenTools = document.createElement("div");
@@ -473,16 +606,18 @@ const fullscreenControls = [
   routeProfile.closest("label"),
   submit,
   resetDem,
-  result
+  result,
 ];
-const originalLocations = fullscreenControls.map(control => {
+const originalLocations = fullscreenControls.map((control) => {
   const placeholder = document.createComment("Fullscreen control location");
   control.before(placeholder);
   return placeholder;
 });
 
 function syncDemFullscreen() {
-  const expanded = document.fullscreenElement === demMap || demMap.classList.contains("map-expanded");
+  const expanded =
+    document.fullscreenElement === demMap ||
+    demMap.classList.contains("map-expanded");
   if (expanded === !demFullscreenTools.hidden) return;
   demFullscreenTools.hidden = !expanded;
   fullscreenControls.forEach((control, index) => {
@@ -492,21 +627,32 @@ function syncDemFullscreen() {
 }
 
 document.addEventListener("fullscreenchange", syncDemFullscreen);
-new MutationObserver(syncDemFullscreen).observe(demMap, {attributes: true, attributeFilter: ["class"]});
-document.getElementById("dem-layer-info").onclick = event => {
+new MutationObserver(syncDemFullscreen).observe(demMap, {
+  attributes: true,
+  attributeFilter: ["class"],
+});
+document.getElementById("dem-layer-info").onclick = (event) => {
   const notes = document.getElementById("dem-layer-notes");
   notes.hidden = !notes.hidden;
   event.currentTarget.setAttribute("aria-expanded", String(!notes.hidden));
 };
-document.getElementById("dem-zoom-in").onclick = () => setDemZoom(demZoom * 1.5);
-document.getElementById("dem-zoom-out").onclick = () => setDemZoom(demZoom / 1.5);
+document.getElementById("dem-zoom-in").onclick = () =>
+  setDemZoom(demZoom * 1.5);
+document.getElementById("dem-zoom-out").onclick = () =>
+  setDemZoom(demZoom / 1.5);
 document.getElementById("dem-reset").onclick = () => {
   demX = demY = 0;
   setDemZoom(1);
 };
 demFullscreen.onclick = async () => {
   if (document.fullscreenElement === demMap) await document.exitFullscreen();
-  else if (!demMap.classList.toggle("map-expanded", !demMap.classList.contains("map-expanded"))) return;
+  else if (
+    !demMap.classList.toggle(
+      "map-expanded",
+      !demMap.classList.contains("map-expanded"),
+    )
+  )
+    return;
   else {
     try {
       await demMap.requestFullscreen();
@@ -516,10 +662,10 @@ demFullscreen.onclick = async () => {
     }
   }
 };
-document.addEventListener("keydown", event => {
+document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") demMap.classList.remove("map-expanded");
 });
-document.querySelectorAll("[data-dem-layer]").forEach(button => {
+document.querySelectorAll("[data-dem-layer]").forEach((button) => {
   button.onclick = () => {
     const layer = button.dataset.demLayer;
     const active = !demLayers.has(layer);
@@ -527,11 +673,16 @@ document.querySelectorAll("[data-dem-layer]").forEach(button => {
     else demLayers.delete(layer);
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
-    const source = {contours: "jezero-contours.png", hazards: "jezero-hazards.png"}[layer];
+    const source = {
+      contours: "jezero-contours.png",
+      hazards: "jezero-hazards.png",
+    }[layer];
     if (source && !demOverlays[layer]) {
       const image = new Image();
       demOverlays[layer] = image;
-      image.onload = () => { if (grid) draw(); };
+      image.onload = () => {
+        if (grid) draw();
+      };
       image.src = source;
     }
     if (grid) draw();
@@ -545,18 +696,22 @@ function pinchGeometry() {
   return {
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
-    span: Math.hypot(a.x - b.x, a.y - b.y)
+    span: Math.hypot(a.x - b.x, a.y - b.y),
   };
 }
 
-canvas.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || demPointers.size >= 2 ||
-      (demPointers.size && event.pointerType !== "touch")) return;
+canvas.addEventListener("pointerdown", (event) => {
+  if (
+    event.button !== 0 ||
+    demPointers.size >= 2 ||
+    (demPointers.size && event.pointerType !== "touch")
+  )
+    return;
   demDragged = demPointers.size > 0;
-  demPointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+  demPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   canvas.setPointerCapture(event.pointerId);
 });
-canvas.addEventListener("pointermove", event => {
+canvas.addEventListener("pointermove", (event) => {
   const pointer = demPointers.get(event.pointerId);
   if (!pointer) return;
   if (demPointers.size === 2) {
@@ -565,7 +720,10 @@ canvas.addEventListener("pointermove", event => {
     pointer.y = event.clientY;
     const after = pinchGeometry();
     if (before.span < 1) return;
-    const nextZoom = Math.min(12, Math.max(1, demZoom * after.span / before.span));
+    const nextZoom = Math.min(
+      12,
+      Math.max(1, (demZoom * after.span) / before.span),
+    );
     const ratio = nextZoom / demZoom;
     const rect = canvas.getBoundingClientRect();
     const sx = canvas.width / rect.width;
@@ -582,14 +740,14 @@ canvas.addEventListener("pointermove", event => {
   if (!demDragged && Math.hypot(dx, dy) < 4) return;
   demDragged = true;
   canvas.classList.add("dem-dragging");
-  demX += dx * canvas.width / canvas.clientWidth;
-  demY += dy * canvas.height / canvas.clientHeight;
+  demX += (dx * canvas.width) / canvas.clientWidth;
+  demY += (dy * canvas.height) / canvas.clientHeight;
   pointer.x = event.clientX;
   pointer.y = event.clientY;
   setDemZoom(demZoom);
 });
-canvas.addEventListener("lostpointercapture", event => {
+canvas.addEventListener("lostpointercapture", (event) => {
   demPointers.delete(event.pointerId);
   if (!demPointers.size) canvas.classList.remove("dem-dragging");
 });
-init().catch(error => result.textContent = error.message);
+init().catch((error) => (result.textContent = error.message));
