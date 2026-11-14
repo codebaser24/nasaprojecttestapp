@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Full Jezero DEM | ARES</title>
+<link rel="stylesheet" href="style.css?v=map-gestures">
+<style>
+  a { color: var(--lime); }
+  .raster-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0; }
+  .raster-viewport { overflow: auto; max-height: 75vh; background: var(--panel); border: 1px solid var(--line); }
+  .raster-viewport img { display: block; width: 100%; height: auto; }
+  .raster-viewport img.native { width: auto; max-width: none; image-rendering: pixelated; }
+</style>
+<main>
+  <a href="index.html">← Field Atlas</a>
+  <h1>Full Jezero elevation raster</h1>
+  <p id="raster-metadata">Reading raster dimensions…</p>
+  <p>Grayscale represents elevation, from low (dark) to high (light). The GeoTIFF download retains the original elevation values and georeferencing.</p>
+  <div class="raster-tools">
+    <button id="native" class="quiet" aria-pressed="false">Native pixels (1:1)</button>
+    <a href="/api/dem-source" download="M20_JezeroCrater_CTXDEM_20m.tif">Download original GeoTIFF</a>
+  </div>
+  <div class="raster-viewport" tabindex="0" aria-label="Scrollable Jezero elevation raster">
+    <img id="raster" src="jezero-full.png" alt="Complete Jezero elevation raster in grayscale">
+  </div>
+</main>
+<script>
+  const button = document.getElementById("native");
+  const raster = document.getElementById("raster");
+  button.onclick = () => {
+    const native = raster.classList.toggle("native");
+    button.setAttribute("aria-pressed", String(native));
+    button.textContent = native ? "Fit full raster" : "Native pixels (1:1)";
+  };
+  fetch("jezero-full.json").then(response => {
+    if (!response.ok) throw new Error();
+    return response.json();
+  }).then(data => {
+    document.getElementById("raster-metadata").textContent =
+      `${data.width} × ${data.height} pixels · ${data.dx} × ${data.dy} m per pixel · USGS Mars 2020 CTX DEM`;
+  }).catch(() => {
+    document.getElementById("raster-metadata").textContent = "Full raster metadata unavailable.";
+  });
+</script>
+</html>
