@@ -1305,8 +1305,12 @@ body:has(.map-expanded) {
 }
 
 /* USGS geology legend, shared by mission and full DEM views. */
-.layer-bar { flex-wrap: wrap; }
-.geology-legend[hidden] { display: none !important; }
+.layer-bar {
+  flex-wrap: wrap;
+}
+.geology-legend[hidden] {
+  display: none !important;
+}
 .geology-legend {
   margin: 8px 0 14px;
   border: 1px solid var(--line);
@@ -1320,8 +1324,13 @@ body:has(.map-expanded) {
   padding: 11px 14px;
   font-weight: 600;
 }
-.geology-legend-count { color: var(--muted); font-weight: 400; }
-.geology-legend-content { padding: 0 14px 12px; }
+.geology-legend-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+.geology-legend-content {
+  padding: 0 14px 12px;
+}
 .geology-unit-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -1330,7 +1339,11 @@ body:has(.map-expanded) {
   margin: 6px 0 12px;
   list-style: none;
 }
-.geology-unit-list li { display: flex; align-items: flex-start; gap: 8px; }
+.geology-unit-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
 .geology-swatch {
   flex: 0 0 12px;
   width: 12px;
@@ -1339,4 +1352,15 @@ body:has(.map-expanded) {
   border-radius: 2px;
   margin-top: 2px;
 }
-.geology-legend-content p { color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+.geology-legend-content p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+.elevation-legend[hidden] {
+  display: none !important;
+}
+
+#map .elevation-legend {
+  top: 58px;
+}

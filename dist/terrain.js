@@ -37,7 +37,10 @@ function loadGeologyLegend() {
   if (!geologyMetadataPromise) {
     geologyMetadataPromise = request("jezero-geology.json")
       .then((metadata) => {
-        if (metadata.schema !== "ares-geology-v1" || !Array.isArray(metadata.units))
+        if (
+          metadata.schema !== "ares-geology-v1" ||
+          !Array.isArray(metadata.units)
+        )
           throw new Error("Unexpected geology metadata format");
         for (const legend of document.querySelectorAll(".geology-legend")) {
           legend.querySelector(".geology-legend-count").textContent =
@@ -51,25 +54,28 @@ function loadGeologyLegend() {
             const swatch = document.createElement("i");
             swatch.className = "geology-swatch";
             // Colour is display-only, never used as a geological identifier.
-            if (/^#[0-9a-fA-F]{6}$/.test(unit.color)) swatch.style.backgroundColor = unit.color;
+            if (/^#[0-9a-fA-F]{6}$/.test(unit.color))
+              swatch.style.backgroundColor = unit.color;
             const name = document.createElement("span");
             name.textContent = `${unit.symbol} — ${(unit.names || []).join(" / ")}`;
             item.append(swatch, name);
             list.append(item);
           }
           const note = document.createElement("p");
-          note.textContent = "USGS Sun & Stack (2020), SIM 3464. ARES display colours (not official USGS colours). Geological units are interpretations, not mineral detections or rover safety ratings. Transparent areas are unmapped.";
+          note.textContent =
+            "USGS Sun & Stack (2020), SIM 3464. ARES display colours (not official USGS colours). Geological units are interpretations, not mineral detections or rover safety ratings. Transparent areas are unmapped.";
           content.append(list, note);
         }
       })
       .catch((error) => {
-        for (const content of document.querySelectorAll(".geology-legend-content"))
+        for (const content of document.querySelectorAll(
+          ".geology-legend-content",
+        ))
           content.textContent = `Geology legend unavailable: ${error.message}`;
       });
   }
   return geologyMetadataPromise;
 }
-
 
 function setDemZoom(value) {
   demZoom = Math.min(12, Math.max(1, value));
@@ -95,7 +101,10 @@ function draw() {
   context.translate(canvas.width / 2 + demX, canvas.height / 2 + demY);
   context.scale(demZoom, demZoom);
   context.translate(-canvas.width / 2, -canvas.height / 2);
+  context.save();
+  context.filter = demLayers.has("elevation") ? "none" : "grayscale(1)";
   context.drawImage(base, 0, 0);
+  context.restore();
   for (const layer of rasterLayerOrder) {
     if (!demLayers.has(layer)) continue;
     const overlay = demOverlays[layer];
@@ -458,6 +467,13 @@ function showMissionTerrain() {
   }
   applyWaypointEdits();
   setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
+
+  const missionBase = document.querySelector("#mapWorld > image");
+  if (missionBase) {
+    missionBase.style.filter = state.layers.includes("elevation")
+      ? "none"
+      : "grayscale(1)";
+  }
   // Identical DEM-aligned image placement; below contours, hazards and routes.
   const geology = document.getElementById("geology");
   setTerrainImage(geology, "jezero-geology.png");
@@ -504,6 +520,7 @@ async function init() {
   // The colour scale describes elevation, not surface composition.
   const legend = document.createElement("div");
   legend.className = "elevation-legend";
+  legend.hidden = true;
 
   const legendTitle = document.createElement("strong");
   legendTitle.textContent = "Elevation (m)";
@@ -524,6 +541,10 @@ async function init() {
   legend.append(legendTitle, legendGradient, legendLabels);
 
   document.getElementById("dem-map").appendChild(legend);
+  const missionLegend = legend.cloneNode(true);
+  missionLegend.id = "mission-elevation-legend";
+  missionLegend.hidden = !state.layers.includes("elevation");
+  document.getElementById("map").appendChild(missionLegend);
   if (!Array.isArray(metadata.cropOrigin))
     throw new Error("Full DEM preparation is required.");
   grid = metadata;
@@ -813,13 +834,24 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
       image.src = source;
     }
     if (layer === "geology") setGeologyLegendVisible("dem", active);
+    if (layer === "elevation") {
+      document.querySelector("#dem-map .elevation-legend").hidden = !active;
+    }
     if (grid) draw();
   };
 });
 
-document.querySelector('[data-layer="geology"]').addEventListener("click", () => {
-  setGeologyLegendVisible("mission", state.layers.includes("geology"));
-});
+document
+  .querySelector('[data-layer="elevation"]')
+  .addEventListener("click", () => {
+    const missionBase = document.querySelector("#mapWorld > image");
+
+    if (missionBase) {
+      missionBase.style.filter = state.layers.includes("elevation")
+        ? "none"
+        : "grayscale(1)";
+    }
+  });
 
 const demPointers = new Map();
 

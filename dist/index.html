@@ -237,12 +237,18 @@
               </div>
             </div>
             <div class="layer-bar">
-              <span class="eyebrow">MAP LAYERS</span
-              ><button class="layer active" data-layer="contours">
-                ◉ Topography</button
-              ><button class="layer active" data-layer="hazards">
+              <span class="eyebrow">MAP LAYERS</span>
+              <button class="layer" data-layer="elevation" aria-pressed="false">
+                ◉ Elevation
+              </button>
+
+              <button class="layer" data-layer="contours" aria-pressed="false">
+                ◎ Topography
+              </button>
+              <button class="layer active" data-layer="hazards">
                 △ Hazards</button
-              ><button class="layer" data-layer="geology" aria-pressed="false">◈ Geology</button
+              ><button class="layer" data-layer="geology" aria-pressed="false">
+                ◈ Geology</button
               ><button class="layer" data-layer="minerals">◇ Minerals</button
               ><button class="layer" data-layer="thermal">☀ Thermal</button
               ><button class="info" id="sources" aria-label="Data sources">
@@ -250,8 +256,12 @@
               </button>
             </div>
             <details class="geology-legend" id="mission-geology-legend" hidden>
-              <summary>USGS geological units <span class="geology-legend-count"></span></summary>
-              <div class="geology-legend-content">Loading geological unit information…</div>
+              <summary>
+                USGS geological units <span class="geology-legend-count"></span>
+              </summary>
+              <div class="geology-legend-content">
+                Loading geological unit information…
+              </div>
             </details>
             <div class="conditions">
               <div class="conditions-title">
@@ -477,18 +487,22 @@
             </button>
           </div>
           <details class="geology-legend" id="dem-geology-legend" hidden>
-            <summary>USGS geological units <span class="geology-legend-count"></span></summary>
-            <div class="geology-legend-content">Loading geological unit information…</div>
+            <summary>
+              USGS geological units <span class="geology-legend-count"></span>
+            </summary>
+            <div class="geology-legend-content">
+              Loading geological unit information…
+            </div>
           </details>
           <p id="dem-layer-notes" hidden>
             Topography displays interpolated elevation contours at 50 m
             intervals, with major contours every 250 m.Hazards classify maximum
             local neighboring slopes into three categories: above 10° to 18°
             (amber), above 18° to 22° (orange-red), and above 22° (dark red).
-            Geology shows interpreted USGS map units where available, not mineral detections.
-            These are terrain slope indicators, not guarantees of rover safety
-            or route traversability.. Minerals and thermal are simulated
-            overlays.
+            Geology shows interpreted USGS map units where available, not
+            mineral detections. These are terrain slope indicators, not
+            guarantees of rover safety or route traversability.. Minerals and
+            thermal are simulated overlays.
           </p>
           <p>
             <a
