@@ -1014,10 +1014,26 @@ dialog .choice {
   width: 8px;
   height: 8px;
 }
+
+/* Match the legend to the three Hazard v2 RGBA classifications. */
 .slope-moderate {
   background: #ffc048;
 }
+
 .slope-steep {
+  background: #ff6e41;
+}
+
+.slope-very-steep {
+  background: #ae2d48;
+}
+
+/* Hazard v1 has only two categories; hide the v2-only category on fallback. */
+.slope-legend.hazard-legacy .hazard-v2-only {
+  display: none;
+}
+
+.slope-legend.hazard-legacy .slope-steep {
   background: #ff5145;
 }
 

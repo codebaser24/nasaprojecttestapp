@@ -114,14 +114,26 @@ function draw() {
 }
 
 function showSlopeHazards() {
-  setTerrainImage(document.getElementById("hazards"), "jezero-hazards.png");
   const legend = document.createElement("div");
   legend.className = "slope-legend";
-  legend.innerHTML =
-    '<strong>DEM slope hazards</strong><span><i class="slope-moderate"></i> &gt;10°–18°</span><span><i class="slope-steep"></i> &gt;18°</span>';
+
+  // These thresholds correspond to the route-profile slope limits.
+  legend.innerHTML = `
+    <strong>DEM slope hazards</strong>
+    <span><i class="slope-moderate"></i> &gt;10&deg;&ndash;18&deg;</span>
+    <span><i class="slope-steep"></i> &gt;18&deg;&ndash;22&deg;</span>
+    <span class="hazard-v2-only">
+      <i class="slope-very-steep"></i> &gt;22&deg;
+    </span>
+  `;
+
   legend.title =
-    "Maximum slope to a neighboring DEM cell. Unshaded cells may still contain smaller hazards.";
+    "Maximum local neighboring slope. A hazardous pixel does not necessarily block every route through it.";
+
   document.getElementById("map").append(legend);
+
+  // Load the new hazard overlay after the legend exists.
+  setTerrainImage(document.getElementById("hazards"), "jezero-hazards-v2.png");
 }
 
 let missionRouteRequest;
@@ -341,12 +353,32 @@ function setTerrainImage(target, url, replace = false) {
   image.setAttribute("height", "700");
   image.setAttribute("preserveAspectRatio", "none");
 
-  // Fall back to the original contour overlay if v2 cannot load.
-  if (url === "jezero-contours-v2.png") {
+  // Keep original overlays available if a v2 asset cannot load.
+  const fallbacks = {
+    "jezero-contours-v2.png": "jezero-contours.png",
+    "jezero-hazards-v2.png": "jezero-hazards.png",
+  };
+
+  const fallback = fallbacks[url];
+
+  if (fallback) {
     image.addEventListener("error", () => {
-      if (image.getAttribute("href") !== "jezero-contours.png") {
-        console.warn("Contour v2 unavailable; using original contours.");
-        image.setAttribute("href", "jezero-contours.png");
+      if (image.getAttribute("href") !== fallback) {
+        console.warn(`${url} unavailable; loading ${fallback}.`);
+        image.setAttribute("href", fallback);
+
+        // The original hazard image contains only two categories.
+        if (url === "jezero-hazards-v2.png") {
+          const legend = document.querySelector(".slope-legend");
+          if (legend) {
+            legend.classList.add("hazard-legacy");
+            const steepLabel =
+              legend.querySelector(".slope-steep")?.parentElement;
+            if (steepLabel) {
+              steepLabel.innerHTML = '<i class="slope-steep"></i> &gt;18&deg;';
+            }
+          }
+        }
       }
     });
   }
@@ -693,7 +725,7 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
     const source = {
       // Interpolated CTX DEM contours: 50 m minor, 250 m major.
       contours: "jezero-contours-v2.png",
-      hazards: "jezero-hazards.png",
+      hazards: "jezero-hazards-v2.png",
     }[layer];
     if (source && !demOverlays[layer]) {
       const image = new Image();
@@ -705,13 +737,19 @@ document.querySelectorAll("[data-dem-layer]").forEach((button) => {
       };
 
       // If interpolated contours are unavailable, use the original overlay.
+
       image.onerror = () => {
-        if (
-          layer === "contours" &&
-          !image.src.endsWith("jezero-contours.png")
-        ) {
-          console.warn("Contour v2 unavailable; loading original contours.");
-          image.src = "jezero-contours.png";
+        // Each enhanced layer falls back independently to its original image.
+        const fallbacks = {
+          contours: "jezero-contours.png",
+          hazards: "jezero-hazards.png",
+        };
+
+        const fallback = fallbacks[layer];
+
+        if (fallback && !image.src.endsWith("/" + fallback)) {
+          console.warn(`${layer} v2 unavailable; loading original overlay.`);
+          image.src = fallback;
         } else {
           console.error(`Unable to load ${layer} overlay.`);
         }
