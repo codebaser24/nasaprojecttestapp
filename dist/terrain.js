@@ -149,6 +149,41 @@ function updateMissionLegend() {
   document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(), ...active]);
 }
 
+// Legends sit under the map normally. In fullscreen that space is gone, so the legend moves
+// onto the map in a collapsible panel, and moves back when fullscreen ends.
+function floatLegendInFullscreen(mapElement, legend) {
+  const overlay = document.createElement("div");
+  overlay.className = "legend-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = '<button type="button" class="legend-toggle" aria-expanded="true">LEGEND</button>';
+  mapElement.append(overlay);
+  const home = document.createComment("Legend location outside fullscreen");
+  legend.before(home);
+  const toggle = overlay.querySelector("button");
+  toggle.onclick = () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(open));
+    legend.hidden = !open;
+  };
+  const sync = () => {
+    const expanded = document.fullscreenElement === mapElement || mapElement.classList.contains("map-expanded");
+    if (expanded === !overlay.hidden) return;
+    overlay.hidden = !expanded;
+    if (expanded) {
+      overlay.append(legend);
+    } else {
+      home.after(legend);
+      legend.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  };
+  document.addEventListener("fullscreenchange", sync);
+  new MutationObserver(sync).observe(mapElement, {attributes: true, attributeFilter: ["class"]});
+}
+
+floatLegendInFullscreen(document.getElementById("map"), document.getElementById("missionLegend"));
+floatLegendInFullscreen(document.getElementById("dem-map"), document.getElementById("demLegend"));
+
 function showSlopeHazards() {
   setTerrainImage(document.getElementById("hazards"), buildUrl("hazards.png"));
 }

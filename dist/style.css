@@ -211,7 +211,15 @@ dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14
 .map-legends { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); align-items: start; gap: 10px; margin-top: 12px; }
 .inventory-item { min-width: 0; }
 .inventory-item p { overflow-wrap: anywhere; }
-.map-legends:empty { display: none; }
+.map-legends:empty, .map-legends[hidden] { display: none; }
+.legend-overlay { position: absolute; top: 62px; left: 14px; z-index: 3; display: flex; flex-direction: column; width: min(300px, calc(100% - 90px)); max-height: max(150px, calc(100% - 300px)); border: 1px solid var(--line); border-radius: 8px; background: rgba(19, 24, 21, .93); }
+.legend-overlay[hidden], .legend-overlay:has(.map-legends:empty) { display: none; }
+.legend-toggle { flex: none; padding: 8px 12px; border: 0; background: none; color: var(--lime); font-size: 10px; letter-spacing: 1.2px; text-align: left; cursor: pointer; }
+.legend-toggle::after { content: " ▾"; }
+.legend-toggle[aria-expanded="false"]::after { content: " ▸"; }
+.legend-overlay .map-legends { grid-template-columns: 1fr; gap: 0; min-height: 0; margin: 0; padding: 0 8px 6px; overflow-y: auto; border-top: 1px solid var(--line); }
+.legend-overlay .legend-block { padding: 8px 4px; border: 0; border-bottom: 1px solid #262c27; border-radius: 0; background: none; }
+.legend-overlay .legend-block:last-child { border-bottom: 0; }
 .legend-block { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #171c18; font-size: 11px; color: #c3cdb9; min-width: 0; }
 .legend-block b { display: block; margin-bottom: 8px; font-weight: 600; overflow-wrap: anywhere; }
 .legend-block small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.45; }
