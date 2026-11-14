@@ -1,4 +1,4 @@
-"""Serve the atlas and compute slope-constrained routes over a DEM grid."""
+"""Serve the atlas, manage the loaded data files, and compute slope-constrained routes."""
 from functools import lru_cache
 from array import array
 from heapq import heappop, heappush
@@ -7,34 +7,54 @@ import json
 from math import atan2, degrees, hypot, isfinite
 import mmap
 from pathlib import Path
+import re
+import threading
+from urllib.parse import unquote, urlsplit
+
+import dataset
 
 ROOT = Path(__file__).resolve().parent
 PROFILES = {"balanced": (18, 2), "low-exposure": (10, 6), "shortest": (22, 0)}
+MAX_UPLOAD_BYTES = 4 * 1024 ** 3
+build_lock = threading.Lock()
+build_status = {"state": "idle"}
 
 
-@lru_cache(maxsize=1)
-def terrain():
-    return json.loads((ROOT / "terrain.json").read_text())
+def current_meta():
+    # Read the pointer on every request so a command-line preparation is picked up too.
+    return dataset.load_current()
 
 
-@lru_cache(maxsize=1)
-def full_metadata():
-    return json.loads((ROOT / "dist" / "jezero-full.json").read_text())
-
-
-@lru_cache(maxsize=1)
-def full_terrain():
-    metadata = full_metadata()
-    with (ROOT / "jezero-full.f32").open("rb") as source:
+@lru_cache(maxsize=2)
+def elevation_grid(key):
+    meta = json.loads((dataset.BUILDS / key / "meta.json").read_text())
+    with (dataset.BUILDS / key / "elevation.f32").open("rb") as source:
         data = mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ)
-    if len(data) != metadata["width"] * metadata["height"] * 4:
+    if len(data) != meta["width"] * meta["height"] * 4:
         data.close()
-        raise ValueError("Full DEM elevation file has an unexpected size.")
-    return {**metadata, "elevation": memoryview(data).cast("f")}
+        raise ValueError("Elevation file has an unexpected size. Load the files again.")
+    return {**meta, "elevation": memoryview(data).cast("f")}
 
 
 class SearchLimitReached(ValueError):
     pass
+
+
+class InsufficientData(ValueError):
+    pass
+
+
+def routing_source(meta):
+    """Return the data routing may use, or raise if the loaded files lack it."""
+    if not meta:
+        raise InsufficientData("No data files are loaded. Select files in the Data files tab.")
+    routing = meta["routing"]
+    if not routing["available"]:
+        needed = [r["label"] for r in routing["requires"] if r["id"] in routing["missing"]]
+        raise InsufficientData("Not enough data available to generate a route. Missing: " + "; ".join(needed))
+    elevation = meta["elevation"]
+    return [f"Elevation (band {elevation['band']} of {elevation['file']})",
+            "Slope, computed from neighbouring elevation cells"]
 
 
 def find_route(grid, start, goal, profile, extended=False):
@@ -113,8 +133,24 @@ def find_route(grid, start, goal, profile, extended=False):
     raise ValueError("No route meets the slope limit between these points.")
 
 
+def run_build(identifiers):
+    def progress(message, step, total):
+        with build_lock:
+            build_status.update(message=message, step=step, total=total)
+    try:
+        meta = dataset.build(identifiers, progress)
+        dataset.set_current(meta, identifiers)
+        with build_lock:
+            build_status.clear()
+            build_status.update(state="done", key=meta["key"], message="Files loaded.")
+    except Exception as error:
+        with build_lock:
+            build_status.clear()
+            build_status.update(state="error", message=str(error))
+
+
 class Handler(SimpleHTTPRequestHandler):
-    timeout = 15
+    timeout = 30
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / "dist"), **kwargs)
@@ -125,8 +161,19 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
     def translate_path(self, path):
-        if path == "/api/dem-source":
-            return str(ROOT / "M20_JezeroCrater_CTXDEM_20m.tif")
+        path = urlsplit(path).path
+        meta = None
+        if path in ("/api/dem-source", "/jezero-full.json", "/jezero-full.png"):
+            meta = current_meta()
+        if path == "/api/dem-source" and meta and meta["elevation"].get("fileId"):
+            return str(dataset.resolve(meta["elevation"]["fileId"]))
+        if path == "/jezero-full.json" and meta:
+            return str(dataset.BUILDS / meta["key"] / "meta.json")
+        if path == "/jezero-full.png" and meta and meta["baseImage"]:
+            return str(dataset.BUILDS / meta["key"] / meta["baseImage"])
+        match = re.fullmatch(r"/builds/([0-9a-f]{16})/([A-Za-z0-9_-]+\.(?:png|json))", path)
+        if match:
+            return str(dataset.BUILDS / match[1] / match[2])
         return super().translate_path(path)
 
     def respond(self, status, payload):
@@ -134,43 +181,103 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
+    def read_json(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= 65536:
+            raise ValueError("Invalid request size.")
+        return json.loads(self.rfile.read(length))
+
     def do_GET(self):
-        if self.path != "/api/terrain":
-            return super().do_GET()
-        try:
-            self.respond(200, terrain())
-        except FileNotFoundError:
-            self.respond(503, {"error": "DEM unavailable. Run the preparation command in the README."})
+        path = urlsplit(self.path).path
+        if path == "/api/files":
+            return self.respond(200, {"files": dataset.list_files()})
+        if path == "/api/dataset":
+            with build_lock:
+                status = dict(build_status)
+            return self.respond(200, {"meta": current_meta(), "build": status})
+        return super().do_GET()
 
     def do_POST(self):
-        if self.path != "/api/route":
-            return self.respond(404, {"error": "Unknown endpoint"})
+        path = urlsplit(self.path).path
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 4096:
-                raise ValueError("Invalid request size.")
-            payload = json.loads(self.rfile.read(length))
-            start, goal, profile = payload["start"], payload["goal"], payload["profile"]
-            if profile not in PROFILES or any(
-                not isinstance(point, list) or len(point) != 2 or any(type(n) is not int for n in point)
-                for point in (start, goal)
-            ):
-                raise ValueError("Provide integer grid coordinates and a valid route profile.")
-            coverage = payload.get("coverage", "crop")
-            if coverage not in ("crop", "full"):
-                raise ValueError("Invalid DEM coverage.")
-            grid = full_terrain() if coverage == "full" else terrain()
-            self.respond(200, find_route(grid, tuple(start), tuple(goal), profile,
-                                         extended=coverage == "full" and payload.get("extended") is True))
+            if path == "/api/route":
+                return self.route()
+            if path == "/api/alignment":
+                return self.respond(200, dataset.plan(self.read_json()["files"]))
+            if path == "/api/dataset":
+                identifiers = self.read_json()["files"]
+                dataset.plan(identifiers)  # Reject unknown or unreadable selections before starting.
+                with build_lock:
+                    if build_status.get("state") == "building":
+                        return self.respond(409, {"error": "Files are already being loaded."})
+                    build_status.clear()
+                    build_status.update(state="building", message="Starting", step=0, total=1)
+                threading.Thread(target=run_build, args=(identifiers,), daemon=True).start()
+                return self.respond(202, {"state": "building"})
+            if path == "/api/files/upload":
+                return self.upload()
+            return self.respond(404, {"error": "Unknown endpoint"})
+        except InsufficientData as error:
+            routing = (current_meta() or {}).get("routing", {})
+            self.respond(422, {"error": str(error), "code": "insufficient_data",
+                               "requires": routing.get("requires", []), "missing": routing.get("missing", [])})
         except SearchLimitReached as error:
             self.respond(422, {"error": str(error), "code": "search_limit"})
         except FileNotFoundError:
-            self.respond(503, {"error": "DEM unavailable."})
+            self.respond(503, {"error": "Data files unavailable. Load files again in the Data files tab."})
         except (ValueError, TypeError, KeyError) as error:
             self.respond(400, {"error": str(error)})
+
+    def route(self):
+        payload = self.read_json()
+        start, goal, profile = payload["start"], payload["goal"], payload["profile"]
+        if profile not in PROFILES or any(
+            not isinstance(point, list) or len(point) != 2 or any(type(n) is not int for n in point)
+            for point in (start, goal)
+        ):
+            raise ValueError("Provide integer grid coordinates and a valid route profile.")
+        meta = current_meta()
+        data_used = routing_source(meta)
+        route = find_route(elevation_grid(meta["key"]), tuple(start), tuple(goal), profile,
+                           extended=payload.get("extended") is True)
+        self.respond(200, {**route, "dataUsed": data_used})
+
+    def upload(self):
+        name = Path(unquote(self.headers.get("X-File-Name", ""))).name
+        name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+        if not name.lower().endswith(dataset.EXTENSIONS):
+            raise ValueError("Only .tif and .tiff files can be added.")
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= MAX_UPLOAD_BYTES:
+            raise ValueError("File is empty or larger than 4 GB.")
+        dataset.UPLOADS.mkdir(exist_ok=True)
+        target = dataset.UPLOADS / name
+        counter = 1
+        while target.exists():
+            target = dataset.UPLOADS / f"{Path(name).stem}_{counter}{Path(name).suffix}"
+            counter += 1
+        partial = target.with_name(target.name + ".partial")
+        remaining = length
+        with partial.open("wb") as out:
+            while remaining:
+                chunk = self.rfile.read(min(remaining, 1 << 20))
+                if not chunk:
+                    break
+                out.write(chunk)
+                remaining -= len(chunk)
+        if remaining:
+            partial.unlink(missing_ok=True)
+            raise ValueError("Upload was interrupted.")
+        partial.rename(target)
+        info = dataset.inspect(target)
+        if not info["readable"]:
+            target.unlink()
+            raise ValueError(f"{name} could not be read as a GeoTIFF: {info['error']}")
+        self.respond(201, info)
 
 
 if __name__ == "__main__":
