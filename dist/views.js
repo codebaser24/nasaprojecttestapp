@@ -1,27 +1,32 @@
-const missionView = document.getElementById("mission-view");
-const demView = document.getElementById("dem-view");
-const missionPanel = document.getElementById("mission-panel");
-const demPanel = document.getElementById("dem-panel");
+const views = [
+  {tab: document.getElementById("mission-view"), panel: document.getElementById("mission-panel")},
+  {tab: document.getElementById("dem-view"), panel: document.getElementById("dem-panel")},
+  {tab: document.getElementById("files-view"), panel: document.getElementById("files-panel")}
+];
 
-function showView(useDem) {
-  missionPanel.hidden = useDem;
-  demPanel.hidden = !useDem;
-  document.getElementById("export").hidden = useDem;
-  missionView.setAttribute("aria-selected", String(!useDem));
-  demView.setAttribute("aria-selected", String(useDem));
-  missionView.tabIndex = useDem ? -1 : 0;
-  demView.tabIndex = useDem ? 0 : -1;
+function showView(panelId) {
+  const active = views.find(view => view.panel.id === panelId) || views[0];
+  for (const view of views) {
+    const selected = view === active;
+    view.panel.hidden = !selected;
+    view.tab.setAttribute("aria-selected", String(selected));
+    view.tab.tabIndex = selected ? 0 : -1;
+  }
+  document.getElementById("export").hidden = active.panel.id !== "mission-panel";
+  if (location.hash.slice(1) !== active.panel.id) history.replaceState(null, "", "#" + active.panel.id);
+  return active;
 }
 
-missionView.onclick = () => showView(false);
-demView.onclick = () => showView(true);
-missionView.parentElement.addEventListener("keydown", event => {
-  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
-  if (!keys.includes(event.key)) return;
+views.forEach(view => view.tab.onclick = () => showView(view.panel.id));
+views[0].tab.parentElement.addEventListener("keydown", event => {
+  const index = views.findIndex(view => view.tab === event.target);
+  const next = {ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: views.length - 1}[event.key];
+  if (next === undefined || index === -1) return;
   event.preventDefault();
-  const useDem = event.key === "End" || (event.key !== "Home" && event.target === missionView);
-  showView(useDem);
-  (useDem ? demView : missionView).focus();
+  const target = views[(next + views.length) % views.length];
+  showView(target.panel.id);
+  target.tab.focus();
 });
-document.querySelector(".rail-button.active").onclick = () => showView(false);
-showView(location.hash === "#dem-panel");
+document.querySelector(".rail-button.active").onclick = () => showView("mission-panel");
+document.getElementById("filesNav").onclick = () => showView("files-panel");
+showView(location.hash.slice(1));
