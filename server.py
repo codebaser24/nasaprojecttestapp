@@ -9,7 +9,12 @@ import mmap
 from pathlib import Path
 import re
 import threading
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
+import warnings
+
+import numpy as np
+import rasterio
+from rasterio.warp import transform as warp_transform
 
 import dataset
 
@@ -106,7 +111,8 @@ def find_route(grid, start, goal, profile, extended=False):
                 path.append((parent % width, parent // width) if extended else parent)
             path.reverse()
             steps = [(distance(a, b), elevation(b) - elevation(a)) for a, b in zip(path, path[1:])]
-            return dict(path=path, distanceM=round(sum(run for run, _ in steps)),
+            return dict(path=path, elevationsM=[round(elevation(point), 1) for point in path],
+                        distanceM=round(sum(run for run, _ in steps)),
                         ascentM=round(sum(max(0, rise) for _, rise in steps)),
                         maxSlopeDeg=round(max((degrees(atan2(abs(rise), run)) for run, rise in steps), default=0), 1))
         expanded += 1
@@ -131,6 +137,47 @@ def find_route(grid, start, goal, profile, extended=False):
                 previous[neighbor_key] = current_key
                 heappush(queue, (candidate + remaining(neighbor, target), candidate, neighbor))
     raise ValueError("No route meets the slope limit between these points.")
+
+
+@lru_cache(maxsize=4)
+def reference_georeferencing(key):
+    """Affine transform and coordinate systems of the loaded selection's reference grid."""
+    meta = json.loads((dataset.BUILDS / key / "meta.json").read_text())
+    with rasterio.open(dataset.resolve(meta["referenceFile"])) as reference:
+        return reference.transform, reference.crs, dataset.lonlat_crs(reference.crs)
+
+
+def region(meta, x0, y0, x1, y1, size):
+    """Describe a window of the reference grid: corner coordinates and, when available,
+    elevation averaged into at most `size` samples along the longer side."""
+    x0, x1 = sorted((max(0, min(meta["width"], x0)), max(0, min(meta["width"], x1))))
+    y0, y1 = sorted((max(0, min(meta["height"], y0)), max(0, min(meta["height"], y1))))
+    if x1 - x0 < 2 or y1 - y0 < 2:
+        raise ValueError("The region must be at least 2 cells wide and tall.")
+    result = dict(window=[x0, y0, x1, y1], corners=None, heightsM=None)
+    transform, crs, lonlat = reference_georeferencing(meta["key"])
+    if lonlat:
+        xs, ys = zip(transform * (x0, y0), transform * (x1, y1))
+        lons, lats = warp_transform(crs, lonlat, list(xs), list(ys))
+        result["corners"] = dict(northWest=[lons[0], lats[0]], southEast=[lons[1], lats[1]])
+    if meta["routing"]["available"]:
+        heights = np.memmap(dataset.BUILDS / meta["key"] / "elevation.f32", dtype="<f4", mode="r",
+                            shape=(meta["height"], meta["width"]))[y0:y1, x0:x1]
+        step = max(1, -(-max(x1 - x0, y1 - y0) // max(8, min(400, size))))
+        rows, columns = -(-(y1 - y0) // step), -(-(x1 - x0) // step)
+        padded = np.full((rows * step, columns * step), np.nan, np.float32)
+        padded[:y1 - y0, :x1 - x0] = heights
+        blocks = padded.reshape(rows, step, columns, step)
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            averaged = np.nanmean(blocks, axis=(1, 3))
+        valid = averaged[np.isfinite(averaged)]
+        result.update(cellsPerSample=step, columns=columns, rows=rows,
+                      heightsM=[None if not isfinite(v) else round(float(v), 1) for v in averaged.ravel()],
+                      minimumM=float(valid.min()) if valid.size else None,
+                      maximumM=float(valid.max()) if valid.size else None,
+                      method=f"Mean of each {step} × {step} block of elevation cells")
+    return result
 
 
 def run_build(identifiers):
@@ -199,6 +246,16 @@ class Handler(SimpleHTTPRequestHandler):
             with build_lock:
                 status = dict(build_status)
             return self.respond(200, {"meta": current_meta(), "build": status})
+        if path == "/api/region":
+            meta = current_meta()
+            if not meta:
+                return self.respond(422, {"error": "No data files are loaded.", "code": "insufficient_data"})
+            try:
+                query = {name: int(values[0]) for name, values in parse_qs(urlsplit(self.path).query).items()}
+                return self.respond(200, region(meta, query["x0"], query["y0"], query["x1"], query["y1"],
+                                                query.get("size", 160)))
+            except (KeyError, ValueError) as error:
+                return self.respond(400, {"error": f"Invalid region: {error}"})
         return super().do_GET()
 
     def do_POST(self):

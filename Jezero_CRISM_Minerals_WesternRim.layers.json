@@ -1,0 +1,22 @@
+{
+  "source": {
+    "title": "Jezero Western Rim Mineral Maps v1: geologic_map_CRISM_only.tif (unchanged)",
+    "citation": "Valantinas et al., Partially altered olivine in the western rim of Jezero crater, Mars: preserved pre-impact Noachian basement, GRL (in revision)",
+    "license": "CC BY 4.0",
+    "url": "https://github.com/euchas/jezero-rim-mapping",
+    "addedBy": "Mineral layer first added on the vindeep branch"
+  },
+  "bands": {
+    "1": {
+      "kind": "mineral",
+      "note": "Mineral units mapped from ratioed CRISM spectra. 'Weak' and 'strong' describe the 1 µm band, not abundance. Positions are accurate to about 28–75 m.",
+      "classes": {
+        "1": {"name": "Bulk rim", "hidden": true, "reason": "a geologic unit, not a mineral detection"},
+        "2": {"name": "Olivine-bearing (weak)"},
+        "3": {"name": "Fe/Mg phyllosilicates"},
+        "4": {"name": "Olivine-bearing (strong) with carbonate"},
+        "5": {"name": "Pyroxene-rich (LCP)"}
+      }
+    }
+  }
+}

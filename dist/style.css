@@ -45,21 +45,6 @@
 }
 .target-close:hover { background: #35412b; border-color: #74875a; }
 .map.has-real-terrain { background: #191e1b; }
-.slope-legend {
-  display: none;
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-  padding: 8px 10px;
-  border-radius: 4px;
-  background: #191e1b;
-  font-size: 11px;
-  pointer-events: none;
-}
-.map:has(#hazards:not([style*="none"])) .slope-legend { display: flex; flex-wrap: wrap; gap: 10px; }
-.slope-legend i { display: inline-block; width: 8px; height: 8px; }
-.slope-moderate { background: #ffc048; }
-.slope-steep { background: #ff5145; }
 
 #terrain { touch-action: none; user-select: none; }
 #mapWorld { transition: none; }
@@ -115,7 +100,6 @@ body:has(.map-expanded) { overflow: hidden; }
 .mission-fullscreen-tools .waypoint-actions { margin: 0 !important; }
 .mission-fullscreen-tools .advisory { margin: 0; padding: 6px 8px; }
 .mission-fullscreen-tools .advisory p { margin: 2px 0 0; font-size: 10px; }
-#map:is(:fullscreen, .map-expanded) .slope-legend { top: 52px; bottom: auto; }
 .brand {
   font: 700 clamp(20px, 2.5vw, 28px)/1 "Space Grotesk", "Segoe UI", sans-serif;
   letter-spacing: -0.04em;
@@ -155,7 +139,7 @@ body:has(.map-expanded) { overflow: hidden; }
   vector-effect: non-scaling-stroke;
 }
 .data-inventory .conditions-title { flex-wrap: wrap; gap: 6px 16px; }
-.inventory-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 18px; }
+.inventory-grid { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 18px; }
 .inventory-item { padding: 0 17px; border-left: 1px solid var(--line); }
 .inventory-item:first-child { border: 0; padding-left: 0; }
 .inventory-item span { font-size: 8px; letter-spacing: 1px; color: #a3ad9b; }
@@ -172,7 +156,7 @@ body:has(.map-expanded) { overflow: hidden; }
 dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 800px) {
   .inventory-grid { grid-template-columns: 1fr 1fr; gap: 16px; }
-  .inventory-item:nth-child(3) { border: 0; padding-left: 0; }
+  .inventory-item:nth-child(2n + 1) { border: 0; padding-left: 0; }
 }
 #demInventory:empty { display: none; }
 #files-panel { padding: clamp(16px, 3vw, 28px); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; }
@@ -201,6 +185,7 @@ dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14
 .kind-thermal { border-color: #8a5a35; color: #ffbf86; }
 .kind-mineral { border-color: #3f7a65; color: #8be6c3; }
 .kind-imagery { border-color: #556070; color: #c3d0e6; }
+.kind-geology { border-color: #7a6447; color: #e2c79c; }
 .file-error { color: #ffb4a8; }
 .file-loaded, .use-routing { color: var(--lime); }
 .use-shown { color: #d6c49a; }
@@ -223,3 +208,19 @@ dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14
   .footprints { max-width: 320px; }
 }
 .primary:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.map-legends { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); align-items: start; gap: 10px; margin-top: 12px; }
+.inventory-item { min-width: 0; }
+.inventory-item p { overflow-wrap: anywhere; }
+.map-legends:empty { display: none; }
+.legend-block { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #171c18; font-size: 11px; color: #c3cdb9; min-width: 0; }
+.legend-block b { display: block; margin-bottom: 8px; font-weight: 600; overflow-wrap: anywhere; }
+.legend-block small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.legend-ramp { height: 10px; border-radius: 3px; }
+.legend-scale { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #a1b38f; }
+.legend-classes { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.legend-classes li { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 6px; align-items: start; line-height: 1.4; }
+.legend-classes li small { display: inline; margin: 0 0 0 4px; }
+.legend-classes i { width: 10px; height: 10px; margin-top: 3px; border-radius: 2px; }
+.legend-classes i.legend-none { border: 1px dashed #5d675b; }
+.legend-classes i.legend-line { width: 16px; height: 0; margin-top: 8px; border-radius: 0; }
+.legend-hidden { color: var(--muted); }

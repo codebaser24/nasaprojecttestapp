@@ -4,9 +4,16 @@ Nothing is synthesised. Every layer is rendered from a band in a selected file,
 and routing products are written only when the routing requirements are met.
 Only elevation is used for routing; every other band is shown for reference.
 
-An optional sidecar `<file>.layers.json` declares what each band holds when the
-GeoTIFF itself does not say, for example:
-    {"bands": {"1": {"kind": "elevation", "units": "m"}}}
+An optional sidecar `<file>.layers.json` describes the file when the GeoTIFF
+itself does not, for example:
+    {"source": {"citation": "...", "license": "...", "url": "..."},
+     "bands": {"1": {"kind": "mineral", "note": "...",
+                     "classes": {"2": {"name": "Olivine"}, "1": {"name": "Rim", "hidden": true}}}}}
+Bands with a colour table, or with declared classes, are drawn as class maps.
+
+Methods adapted from teammates' branches: the hillshaded elevation colours,
+three-level slope hazards and interpolated contours come from Gihan Kesara's
+prepare_full_dem.py, prepare_hazards.py and prepare_contours.py (kesara branch).
 """
 import hashlib
 import json
@@ -16,7 +23,9 @@ import shutil
 import struct
 import zlib
 
+import contourpy
 import numpy as np
+from PIL import Image, ImageDraw
 import rasterio
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.warp import reproject, transform, transform_bounds
@@ -27,15 +36,18 @@ UPLOADS = ROOT / "data"
 DATA_DIRS = (ROOT, UPLOADS)
 BUILDS = ROOT / "builds"
 CURRENT = BUILDS / "current.json"
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 EXTENSIONS = (".tif", ".tiff")
 MAX_LAYERS_PER_FILE = 6
+MAX_CLASSES = 64
 
-KINDS = ("elevation", "thermal", "mineral", "imagery")
+# Checked in this order, so a "CRISM geologic map" counts as mineral data.
+KINDS = ("elevation", "thermal", "mineral", "geology", "imagery")
 KEYWORDS = {
     "elevation": r"elev|height|altitude|topo|dem(?![a-z])|dtm|dsm",
     "thermal": r"thermal|temperature|brightness.?temp|themis|inertia|kelvin",
     "mineral": r"mineral|crism|olivine|pyroxene|carbonate|clay|phyllosilicate|sulfate|hydrated",
+    "geology": r"geolog|litholog|geo.?units?",
     "imagery": r"image|imagery|reflectance|albedo|visible|panchromatic|radiance",
 }
 METRES = {"m": 1.0, "metre": 1.0, "meter": 1.0, "metres": 1.0, "meters": 1.0, "km": 1000.0,
@@ -46,8 +58,19 @@ ROUTING_REQUIREMENTS = [
     {"id": "vertical_units", "label": "Elevation units convertible to metres"},
 ]
 RAMPS = {"thermal": ((40, 40, 160), (255, 150, 60)), "mineral": ((20, 70, 60), (130, 240, 180)),
+         "geology": ((70, 50, 40), (230, 200, 160)),
          "elevation": ((30, 30, 30), (235, 235, 235)), "imagery": ((0, 0, 0), (255, 255, 255)),
          "unknown": ((60, 30, 70), (230, 170, 240))}
+# Display colours for classes that neither the file nor its sidecar colours.
+CLASS_COLOURS = ("#e6a23c", "#63d92a", "#3dbae8", "#962dc4", "#e92d23", "#d1a6c0", "#8cbcc8", "#b5be83",
+                 "#e2b66f", "#91a8d3", "#a6c6a0", "#d79a80")
+# Elevation colours from low to high (visualisation colours, not surface colours).
+ELEVATION_PALETTE = ((35, 55, 72), (57, 111, 112), (132, 151, 111), (194, 157, 104), (239, 218, 177))
+HAZARD_CLASSES = ((10, "Moderate: steeper than 10° (above the lower-slope route limit)", (255, 192, 72, 155)),
+                  (18, "Steep: steeper than 18° (above the balanced route limit)", (255, 110, 65, 195)),
+                  (22, "Very steep: steeper than 22° (above every route limit)", (174, 45, 72, 220)))
+CONTOUR_MINOR_M, CONTOUR_MAJOR_M = 50, 250
+CONTOUR_MINOR_COLOUR, CONTOUR_MAJOR_COLOUR = (240, 226, 195, 135), (255, 247, 218, 225)
 
 
 # ---------------------------------------------------------------- inspection
@@ -103,11 +126,22 @@ def classify(text):
     return None
 
 
-def describe_bands(raster, path):
-    sidecar = path.with_suffix(".layers.json")
-    declared = {}
-    if sidecar.exists():
-        declared = json.loads(sidecar.read_text()).get("bands", {})
+def sidecar_path(path):
+    return path.with_suffix(".layers.json")
+
+
+def read_sidecar(path):
+    sidecar = sidecar_path(path)
+    if not sidecar.exists():
+        return {}
+    try:
+        return json.loads(sidecar.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise ValueError(f"{sidecar.name} is not valid JSON: {error}")
+
+
+def describe_bands(raster, path, sidecar):
+    declared = sidecar.get("bands", {})
     bands = []
     for index in range(1, raster.count + 1):
         description = raster.descriptions[index - 1]
@@ -115,12 +149,16 @@ def describe_bands(raster, path):
         tags = " ".join(f"{k} {v}" for k, v in raster.tags(index).items())
         interp = raster.colorinterp[index - 1]
         band = dict(band=index, dtype=raster.dtypes[index - 1], description=description, units=units,
-                    colour=interp.name, kind=None, identifiedBy=None)
+                    colour=interp.name, kind=None, identifiedBy=None, note=None, classes=None,
+                    categorical=interp == ColorInterp.palette)
         declaration = declared.get(str(index))
         if declaration:
             band["kind"] = declaration.get("kind")
             band["units"] = declaration.get("units", units)
-            band["identifiedBy"] = f"declared in {sidecar.name}"
+            band["note"] = declaration.get("note")
+            band["classes"] = declaration.get("classes")
+            band["categorical"] = band["categorical"] or bool(band["classes"])
+            band["identifiedBy"] = f"declared in {sidecar_path(path).name}"
         elif classify(f"{description} {tags}"):
             band["kind"], band["identifiedBy"] = classify(f"{description} {tags}"), "band description or metadata"
         elif units and units.lower() in ("k", "kelvin"):
@@ -138,14 +176,23 @@ def describe_bands(raster, path):
 _inspections = {}
 
 
+def file_version(path):
+    """Size and modification time of a file and its sidecar, so editing either is noticed."""
+    stat = path.stat()
+    sidecar = sidecar_path(path)
+    return [stat.st_size, stat.st_mtime_ns, sidecar.stat().st_mtime_ns if sidecar.exists() else None]
+
+
 def inspect(path):
     stat = path.stat()
-    cache_key = (str(path), stat.st_size, stat.st_mtime_ns)
+    cache_key = (str(path), *file_version(path))
     if cache_key in _inspections:
         return _inspections[cache_key]
     info = dict(id=file_id(path), name=path.name, folder=path.parent.relative_to(ROOT).as_posix() or ".",
-                sizeBytes=stat.st_size, modified=stat.st_mtime, readable=False, error=None)
+                sizeBytes=stat.st_size, modified=stat.st_mtime, readable=False, error=None, source=None)
     try:
+        sidecar = read_sidecar(path)
+        info["source"] = sidecar.get("source")
         with rasterio.open(path) as raster:
             # A truncated download opens normally and fails only when its last rows are read.
             try:
@@ -158,7 +205,7 @@ def inspect(path):
                         projected=bool(raster.crs and raster.crs.is_projected), horizontalUnits=units_name,
                         pixelSizeM=[abs(raster.transform.a) * factor, abs(raster.transform.e) * factor] if factor else None,
                         nativePixelSize=[abs(raster.transform.a), abs(raster.transform.e)],
-                        bands=describe_bands(raster, path), readable=True)
+                        bands=describe_bands(raster, path, sidecar), readable=True)
             if raster.crs and lonlat_crs(raster.crs):
                 west, south, east, north = transform_bounds(raster.crs, lonlat_crs(raster.crs), *raster.bounds)
                 info["lonLatBounds"] = [round(v, 4) for v in (west, south, east, north)]
@@ -240,17 +287,29 @@ def png_chunk(kind, data):
 
 def write_png(path, pixels, color_type):
     height, width = pixels.shape[:2]
-    rows = b"".join(b"\x00" + row.tobytes() for row in pixels)
+    # PNG "Sub" filter: store each byte as the difference from the pixel to its left,
+    # which compresses smooth images far better than raw rows.
+    filtered = pixels.copy()
+    filtered[:, 1:] -= pixels[:, :-1]
+    rows = np.empty((height, 1 + filtered[0].nbytes), np.uint8)
+    rows[:, 0] = 1
+    rows[:, 1:] = filtered.reshape(height, -1)
     header = struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header)
-                     + png_chunk(b"IDAT", zlib.compress(rows, 3)) + png_chunk(b"IEND", b""))
+                     + png_chunk(b"IDAT", zlib.compress(rows.tobytes(), 3)) + png_chunk(b"IEND", b""))
+
+
+def stretch(values):
+    """Value range used for colouring: the 2nd to 98th percentile, so outliers do not wash it out."""
+    finite = values[np.isfinite(values)]
+    if not finite.size:
+        return 0.0, 1.0
+    low, high = np.percentile(finite, (2, 98))
+    return float(low), float(high)
 
 
 def normalise(values):
-    finite = values[np.isfinite(values)]
-    if not finite.size:
-        return np.zeros(values.shape, np.uint8)
-    low, high = np.percentile(finite, (2, 98))
+    low, high = stretch(values)
     scaled = (np.nan_to_num(values, nan=low) - low) / (high - low or 1)
     return np.round(np.clip(scaled, 0, 1) * 255).astype(np.uint8)
 
@@ -261,11 +320,140 @@ def colour(values, kind):
     return [np.round(low[c] + (high[c] - low[c]) * level).astype(np.uint8) for c in range(3)]
 
 
+def hex_colour(rgb):
+    return "#" + "".join(f"{int(c):02x}" for c in rgb[:3])
+
+
+def ramp_legend(kind, values, units):
+    low, high = stretch(values)
+    ramp = RAMPS.get(kind, RAMPS["unknown"])
+    return dict(type="ramp", low=low, high=high, units=units, colours=[hex_colour(c) for c in ramp],
+                note="Colours run from the 2nd to the 98th percentile of the values")
+
+
+def render_classes(values, src, index, band):
+    """Colour a class map using the sidecar's colours, else the file's colour table.
+
+    Returns the RGBA image and a legend listing every class present on the grid.
+    """
+    try:
+        table = src.colormap(index)
+    except ValueError:
+        table = {}
+    declared = band.get("classes") or {}
+    valid = np.isfinite(values)
+    present = np.unique(values[valid]).astype(np.int64)
+    if present.size > MAX_CLASSES:
+        return None, None
+    rgba = np.zeros((*values.shape, 4), np.uint8)
+    items = []
+    for position, value in enumerate(present):
+        info = declared.get(str(value), {})
+        rgb = info.get("colour") or (hex_colour(table[value]) if value in table else CLASS_COLOURS[position % len(CLASS_COLOURS)])
+        selected = valid & (values == value)
+        hidden = bool(info.get("hidden"))
+        if not hidden:
+            rgba[selected] = (*bytes.fromhex(rgb[1:]), 215)
+        items.append(dict(value=int(value), name=info.get("name", f"Class {value}"), colour=rgb, hidden=hidden,
+                          reason=info.get("reason"), gridPercent=round(100 * int(selected.sum()) / values.size, 2)))
+    return rgba, dict(type="classes", items=items)
+
+
+def elevation_image(heights, dx, dy, low, high):
+    """Colour elevation from low to high and shade it as if lit from the upper left.
+
+    Adapted from render_elevation in Gihan Kesara's prepare_full_dem.py (kesara branch).
+    Cells next to missing elevation are left unshaded instead of being compared with a fill value.
+    """
+    palette = np.array(ELEVATION_PALETTE, np.float32)
+    levels = np.linspace(0, len(palette) - 1, 256)
+    lookup = np.column_stack([np.interp(levels, np.arange(len(palette)), palette[:, c]) for c in range(3)])
+    rows, columns = heights.shape
+    rgba = np.zeros((rows, columns, 4), np.uint8)
+    for top in range(0, rows, 256):
+        bottom = min(top + 256, rows)
+        first, last = max(0, top - 1), min(rows, bottom + 1)
+        section = heights[first:last]
+        if section.shape[0] > 1 and columns > 1:
+            # Gradient: elevation change per metre down the rows and across the columns.
+            dz_dy, dz_dx = (np.nan_to_num(g[top - first:top - first + bottom - top])
+                            for g in np.gradient(section, dy, dx))
+            # Light from the upper left: x points right, y points down the map, z up.
+            light = (-0.5 * -dz_dx + -0.5 * -dz_dy + 0.70710678) / np.sqrt(dz_dx ** 2 + dz_dy ** 2 + 1)
+            light = 0.45 + 0.55 * np.clip(light, 0, 1)
+        else:
+            light = np.ones((bottom - top, columns))
+        block = heights[top:bottom]
+        index = np.round(np.clip((np.nan_to_num(block, nan=low) - low) / (high - low or 1), 0, 1) * 255).astype(np.uint8)
+        rgba[top:bottom, :, :3] = np.clip(lookup[index] * light[..., None], 0, 255).astype(np.uint8)
+        rgba[top:bottom, :, 3] = np.where(np.isfinite(block), 255, 0)
+    return rgba
+
+
+def hazard_image(heights, dx, dy):
+    """Classify each cell by its steepest slope to a valid neighbour.
+
+    Adapted from Gihan Kesara's prepare_hazards.py (kesara branch). Cells with no valid
+    neighbour stay transparent ("unknown"), rather than being shown as low slope.
+    """
+    rows, columns = heights.shape
+    grades = np.full(heights.shape, np.nan, np.float32)
+    # Four directions cover all eight neighbours, because each comparison updates both cells.
+    for oy, ox in ((0, 1), (1, -1), (1, 0), (1, 1)):
+        a = np.s_[max(0, -oy):rows - max(0, oy), max(0, -ox):columns - max(0, ox)]
+        b = np.s_[max(0, oy):rows - max(0, -oy), max(0, ox):columns - max(0, -ox)]
+        grade = np.abs(heights[a] - heights[b]) / np.hypot(ox * dx, oy * dy)
+        np.fmax(grades[a], grade, out=grades[a])
+        np.fmax(grades[b], grade, out=grades[b])
+    rgba = np.zeros((rows, columns, 4), np.uint8)
+    known = np.isfinite(grades)
+    items = [dict(name="Up to 10° (not shaded)", colour=None, gridPercent=None)]
+    for degrees, name, colour_value in HAZARD_CLASSES:
+        rgba[known & (grades > np.tan(np.deg2rad(degrees)))] = colour_value
+    for position, (degrees, name, colour_value) in enumerate(HAZARD_CLASSES):
+        upper = HAZARD_CLASSES[position + 1][0] if position + 1 < len(HAZARD_CLASSES) else None
+        selected = known & (grades > np.tan(np.deg2rad(degrees)))
+        if upper is not None:
+            selected &= grades <= np.tan(np.deg2rad(upper))
+        items.append(dict(name=name, colour=hex_colour(colour_value), gridPercent=round(100 * int(selected.sum()) / grades.size, 2)))
+    items[0]["gridPercent"] = round(100 * int((known & (grades <= np.tan(np.deg2rad(HAZARD_CLASSES[0][0])))).sum()) / grades.size, 2)
+    return rgba, dict(type="classes", items=items,
+                      note="Steepest slope from each cell to a neighbouring cell. Hazards smaller than one cell are not visible.")
+
+
+def contour_image(heights):
+    """Draw contours at every 50 m (minor) and 250 m (major) elevation.
+
+    Adapted from Gihan Kesara's prepare_contours.py (kesara branch). Marching squares
+    interpolates where the surface crosses each level, so lines run between cell centres
+    instead of following cell edges. Lines never cross missing elevation.
+    """
+    rows, columns = heights.shape
+    valid = heights[np.isfinite(heights)]
+    image = Image.new("RGBA", (columns, rows), (0, 0, 0, 0))
+    if rows < 2 or columns < 2 or not valid.size:
+        return np.asarray(image), 0
+    generator = contourpy.contour_generator(z=np.ma.masked_invalid(heights), name="serial",
+                                            line_type="Separate", corner_mask=False, chunk_size=256)
+    draw = ImageDraw.Draw(image)
+    first = int(np.ceil(valid.min() / CONTOUR_MINOR_M)) * CONTOUR_MINOR_M
+    last = int(np.floor(valid.max() / CONTOUR_MINOR_M)) * CONTOUR_MINOR_M
+    count = 0
+    for level in range(first, last + 1, CONTOUR_MINOR_M):
+        major = level % CONTOUR_MAJOR_M == 0
+        for line in generator.lines(level):
+            if len(line) > 1:
+                # Contour coordinates are cell centres; image pixels start at the cell's corner.
+                draw.line([(x + 0.5, y + 0.5) for x, y in line], fill=CONTOUR_MAJOR_COLOUR if major else CONTOUR_MINOR_COLOUR,
+                          width=2 if major else 1, joint="curve")
+        count += 1
+    return np.asarray(image), count
+
+
 def selection_key(identifiers):
     parts = [BUILD_VERSION]
     for identifier in dict.fromkeys(identifiers):
-        stat = resolve(identifier).stat()
-        parts.append([identifier, stat.st_size, stat.st_mtime_ns])
+        parts.append([identifier, *file_version(resolve(identifier))])
     return hashlib.sha1(json.dumps(parts).encode()).hexdigest()[:16]
 
 
@@ -316,7 +504,7 @@ def build(identifiers, progress=lambda message, step, total: None):
         file_entries, layers, elevation, elevation_values = [], [], None, None
         for entry in layout["files"]:
             info = inspect(resolve(entry["id"]))
-            record = {**entry, "bands": []}
+            record = {**entry, "bands": [], "source": info.get("source")}
             file_entries.append(record)
             if entry["role"] == "excluded":
                 continue
@@ -355,12 +543,18 @@ def build(identifiers, progress=lambda message, step, total: None):
                     if band["kind"] == "elevation":
                         stats["use"] = "Shown only; another elevation band is used for routing"
                     layer_id = f"layer-{len(layers) + 1}"
-                    channels = colour(values, band["kind"])
-                    alpha = np.where(np.isfinite(values), 210, 0).astype(np.uint8)
-                    write_png(work / f"{layer_id}.png", np.stack((*channels, alpha), axis=-1), 6)
+                    pixels = legend = None
+                    if band["categorical"]:
+                        pixels, legend = render_classes(values, src, band["band"], band)
+                    if pixels is None:
+                        channels = colour(values, band["kind"])
+                        alpha = np.where(np.isfinite(values), 210, 0).astype(np.uint8)
+                        pixels, legend = np.stack((*channels, alpha), axis=-1), ramp_legend(band["kind"], values, band["units"])
+                    write_png(work / f"{layer_id}.png", pixels, 6)
                     layers.append(dict(id=layer_id, kind=band["kind"], file=entry["name"], fileId=entry["id"],
                                        bands=[band["band"]], identifiedBy=band["identifiedBy"], units=band["units"],
-                                       image=f"{layer_id}.png", coveragePercent=stats["gridCoveragePercent"]))
+                                       image=f"{layer_id}.png", coveragePercent=stats["gridCoveragePercent"],
+                                       legend=legend, note=band["note"], source=info["source"]))
                 if len(rgb_values) == 3:
                     stack = [rgb_values[b] for b in sorted(rgb_values, key=lambda b: ("red", "green", "blue").index(
                         next(x["colour"] for x in bands if x["band"] == b)))]
@@ -370,7 +564,8 @@ def build(identifiers, progress=lambda message, step, total: None):
                     layers.append(dict(id=layer_id, kind="imagery", file=entry["name"], fileId=entry["id"],
                                        bands=sorted(rgb_values), identifiedBy="colour interpretation (red, green, blue)",
                                        units=None, image=f"{layer_id}.png",
-                                       coveragePercent=round(100 * np.isfinite(stack[0]).mean(), 2)))
+                                       coveragePercent=round(100 * np.isfinite(stack[0]).mean(), 2),
+                                       legend=None, note=None, source=info["source"]))
 
         missing, vertical = [], None
         if elevation is None:
@@ -400,14 +595,23 @@ def build(identifiers, progress=lambda message, step, total: None):
             meta["lonLatBounds"] = [round(v, 4) for v in (west, south, east, north)]
 
         advance("Drawing the base map")
+        legends = {}
         if elevation_values is not None:
             heights = elevation_values * (vertical or 1)
             valid = heights[np.isfinite(heights)]
             low, high = float(valid.min()), float(valid.max())
             meta.update(minimum=low, maximum=high)
-            shade = np.round((np.nan_to_num(heights, nan=low) - low) * 255 / (high - low or 1)).astype(np.uint8)
-            alpha = np.where(np.isfinite(heights), 255, 0).astype(np.uint8)
-            write_png(work / "base.png", np.stack((shade, alpha), axis=-1), 4)
+            if factor:
+                write_png(work / "base.png", elevation_image(heights, dx, dy, low, high), 6)
+                note = "Shaded as if lit from the upper left. Display colours, not surface colours."
+            else:
+                # Without ground distances the shading would be wrong, so show plain elevation.
+                shade = np.round((np.nan_to_num(heights, nan=low) - low) * 255 / (high - low or 1)).astype(np.uint8)
+                write_png(work / "base.png", np.stack((shade, np.where(np.isfinite(heights), 255, 0).astype(np.uint8)), axis=-1), 4)
+                note = "Grey scale; not shaded because the pixel spacing is not a ground distance."
+            legends["elevation"] = dict(type="ramp", low=low, high=high, units="m",
+                                        colours=[hex_colour(c) for c in (ELEVATION_PALETTE if factor else ((0, 0, 0), (255, 255, 255)))],
+                                        note=note)
             meta.update(baseImage="base.png", baseLayer="elevation")
         elif layers:
             shutil.copyfile(work / layers[0]["image"], work / "base.png")
@@ -417,29 +621,22 @@ def build(identifiers, progress=lambda message, step, total: None):
         if routing["available"]:
             advance("Saving elevation for route calculations")
             heights.astype("<f4").tofile(work / "elevation.f32")
-            advance("Computing slope hazards from elevation")
-            grades = np.zeros_like(heights)
-            for oy, ox in ((0, 1), (1, -1), (1, 0), (1, 1)):
-                a = np.s_[max(0, -oy):ref.height - max(0, oy), max(0, -ox):ref.width - max(0, ox)]
-                b = np.s_[max(0, oy):ref.height - max(0, -oy), max(0, ox):ref.width - max(0, -ox)]
-                grade = np.abs(heights[a] - heights[b]) / np.hypot(ox * dx, oy * dy)
-                np.fmax(grades[a], grade, out=grades[a])
-                np.fmax(grades[b], grade, out=grades[b])
-            overlay = np.zeros((*heights.shape, 4), dtype=np.uint8)
-            overlay[grades > np.tan(np.deg2rad(10))] = (255, 192, 72, 150)
-            overlay[grades > np.tan(np.deg2rad(18))] = (255, 81, 69, 200)
+            advance("Classifying slope hazards (10°, 18°, 22°) from elevation")
+            overlay, legends["hazards"] = hazard_image(heights, dx, dy)
             write_png(work / "hazards.png", overlay, 6)
-            del grades
-            advance("Drawing 50 m contours from elevation")
-            bands_50m = np.floor(heights / 50)
-            contours = np.zeros(heights.shape, dtype=bool)
-            contours[:, 1:] |= np.isfinite(bands_50m[:, 1:]) & np.isfinite(bands_50m[:, :-1]) & (bands_50m[:, 1:] != bands_50m[:, :-1])
-            contours[1:, :] |= np.isfinite(bands_50m[1:, :]) & np.isfinite(bands_50m[:-1, :]) & (bands_50m[1:, :] != bands_50m[:-1, :])
-            overlay.fill(0)
-            overlay[contours] = (228, 212, 172, 145)
+            del overlay
+            advance(f"Drawing interpolated contours ({CONTOUR_MINOR_M} m and {CONTOUR_MAJOR_M} m) from elevation")
+            overlay, levels = contour_image(heights)
             write_png(work / "contours.png", overlay, 6)
-            derived = dict(slope=True, hazards=True, contours=True)
+            legends["contours"] = dict(type="lines", items=[
+                dict(name=f"Every {CONTOUR_MINOR_M} m", colour=hex_colour(CONTOUR_MINOR_COLOUR), width=1),
+                dict(name=f"Every {CONTOUR_MAJOR_M} m", colour=hex_colour(CONTOUR_MAJOR_COLOUR), width=2)],
+                note=f"{levels} contour levels, interpolated between elevation cells")
+            derived = dict(slope=True, hazards=True, contours=True,
+                           hazardThresholdsDeg=[degrees for degrees, _, _ in HAZARD_CLASSES],
+                           contourIntervalsM=[CONTOUR_MINOR_M, CONTOUR_MAJOR_M])
         meta["derived"] = derived
+        meta["legends"] = legends
 
         col, row = ref.width // 2, ref.height // 2
         if lonlat_crs(ref.crs):

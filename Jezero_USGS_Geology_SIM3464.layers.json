@@ -1,0 +1,31 @@
+{
+  "source": {
+    "title": "USGS geologic map of Jezero crater and the Nili Planum region (GeoUnits_v1)",
+    "citation": "Sun and Stack (2020), USGS Scientific Investigations Map 3464",
+    "license": "Public domain (USGS)",
+    "url": "https://pubs.usgs.gov/sim/3464/",
+    "addedBy": "Rasterised onto the CTX DEM grid by prepare_geology.py on the kesara branch; colours are display colours, not official USGS symbology"
+  },
+  "bands": {
+    "1": {
+      "kind": "geology",
+      "note": "Geologic map units, not mineral detections or rover safety ratings.",
+      "classes": {
+        "1": {"name": "Aeb · Eolian bedform unit"},
+        "2": {"name": "Hnpf · Nili Planum fan unit"},
+        "3": {"name": "NHjf1 · Jezero fan 1 unit"},
+        "4": {"name": "NHjf2 · Jezero fan 2 unit"},
+        "5": {"name": "Njf · Jezero floor unit"},
+        "6": {"name": "Nle · Lower etched unit"},
+        "7": {"name": "Nnp1 · Nili Planum 1 unit"},
+        "8": {"name": "Nnp2 · Nili Planum 2 unit"},
+        "9": {"name": "Nrb · Rugged bright unit"},
+        "10": {"name": "Nue · Upper etched unit"},
+        "11": {"name": "ce · Crater ejecta unit"},
+        "12": {"name": "ci · Crater interior unit"},
+        "13": {"name": "cr · Crater rim unit"},
+        "14": {"name": "su · Smooth unit, undivided"}
+      }
+    }
+  }
+}

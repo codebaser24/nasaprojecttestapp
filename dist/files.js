@@ -16,11 +16,13 @@
   const escape = escapeWaypointText;
 
   function formatSize(bytes) {
-    return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
+    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+    return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
   }
 
   function pixelText(file) {
     if (file.pixelSizeM) return `${+file.pixelSizeM[0].toFixed(2)} m`;
+    if (file.nativePixelSize && file.crs && !file.projected) return `${+file.nativePixelSize[0].toPrecision(3)}° (not metres)`;
     if (file.nativePixelSize) return `${+file.nativePixelSize[0].toPrecision(3)} (not metres)`;
     return "—";
   }

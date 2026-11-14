@@ -90,13 +90,67 @@ function draw() {
   context.restore();
 }
 
+function formatValue(value) {
+  return Math.abs(value) >= 100 ? value.toFixed(0) : String(+value.toPrecision(3));
+}
+
+function sourceText(source) {
+  if (!source) return "";
+  return [source.citation || source.title, source.license].filter(Boolean).join(" · ");
+}
+
+// Legend data comes from the build: the base elevation, derived overlays, and each loaded layer.
+function legendEntry(id) {
+  if (!grid?.legends) return null;
+  if (id === "elevation-base") return grid.legends.elevation && {title: "Elevation (base map)", legend: grid.legends.elevation};
+  if (id === "hazards") return grid.legends.hazards && {title: "Slope hazards", legend: grid.legends.hazards};
+  if (id === "contours") return grid.legends.contours && {title: "Topography contours", legend: grid.legends.contours};
+  const layer = grid.layers.find(entry => entry.id === id);
+  return layer?.legend && {title: `${KIND_LABELS[layer.kind]} · ${layer.file}`, legend: layer.legend,
+    note: layer.note, source: sourceText(layer.source), units: layer.units};
+}
+
+function legendHtml(ids) {
+  return ids.map(legendEntry).filter(Boolean).map(({title, legend, note, source}) => {
+    let body = "";
+    if (legend.type === "ramp") {
+      const units = legend.units ? ` ${escapeText(legend.units)}` : "";
+      body = `<div class="legend-ramp" style="background:linear-gradient(90deg,${legend.colours.join(",")})"></div>
+        <div class="legend-scale"><span>${formatValue(legend.low)}${units}</span><span>${formatValue(legend.high)}${units}</span></div>
+        ${legend.units ? "" : "<small>Units are not stated in the file.</small>"}`;
+    } else {
+      body = `<ul class="legend-classes">${legend.items.map(item => {
+        const swatch = legend.type === "lines"
+          ? `<i class="legend-line" style="border-top:${item.width}px solid ${item.colour}"></i>`
+          : `<i${item.colour && !item.hidden ? ` style="background:${item.colour}"` : ' class="legend-none"'}></i>`;
+        const share = item.gridPercent != null ? ` <small>${item.gridPercent}% of grid</small>` : "";
+        const hidden = item.hidden ? ` <small>not shown: ${escapeText(item.reason || "hidden")}</small>` : "";
+        return `<li class="${item.hidden ? "legend-hidden" : ""}">${swatch}<span>${escapeText(item.name)}${share}${hidden}</span></li>`;
+      }).join("")}</ul>`;
+    }
+    const notes = [legend.note, note, source && `Source: ${source}`].filter(Boolean)
+      .map(text => `<small>${escapeText(text)}</small>`).join("");
+    return `<div class="legend-block"><b>${escapeText(title)}</b>${body}${notes}</div>`;
+  }).join("");
+}
+
+function baseLegendIds() {
+  return grid?.baseLayer === "elevation" ? ["elevation-base"] : grid?.baseLayer ? [grid.baseLayer] : [];
+}
+
+function updateDemLegend() {
+  if (grid) document.getElementById("demLegend").innerHTML = legendHtml([...baseLegendIds(), ...demLayers]);
+}
+
+// Called by render() in app.js whenever the mission map's layers change.
+function updateMissionLegend() {
+  if (!grid) return;
+  const active = state.layers.filter(id => availableLayers.has(id));
+  document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(), ...active]);
+}
+
 function showSlopeHazards() {
   setTerrainImage(document.getElementById("hazards"), buildUrl("hazards.png"));
-  const legend = document.createElement("div");
-  legend.className = "slope-legend";
-  legend.innerHTML = '<strong>DEM slope hazards</strong><span><i class="slope-moderate"></i> &gt;10°–18°</span><span><i class="slope-steep"></i> &gt;18°</span>';
-  legend.title = "Maximum slope to a neighboring DEM cell. Unshaded cells may still contain smaller hazards.";
-  document.getElementById("map").append(legend);
 }
 
 let missionRouteRequest;
@@ -104,8 +158,10 @@ let missionDemSummary = null;
 let calculatedPlan;
 let calculatedDisplay;
 const routeDisplayIds = ["distance", "ascent", "slope", "advisoryTitle", "advisoryText"];
-const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", unknown: "Unidentified"};
-const KIND_ICONS = {elevation: "▲", imagery: "▣", mineral: "◇", thermal: "☀", unknown: "?"};
+const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", geology: "Geology", unknown: "Unidentified"};
+const KIND_ICONS = {elevation: "▲", imagery: "▣", mineral: "◇", thermal: "☀", geology: "▦", unknown: "?"};
+// Kinds that are shown for reference when a loaded file has them.
+const OPTIONAL_KINDS = ["imagery", "mineral", "thermal", "geology"];
 const SHOWN_ONLY = "Shown only; not used in route calculations";
 let overlayOpacity = 0.8;
 
@@ -123,19 +179,28 @@ function shortName(name) {
   return name.length > 24 ? name.slice(0, 22) + "…" : name;
 }
 
+// Thresholds and intervals recorded by the build (older builds used 10°/18° and 50 m).
+function derivedText(kind) {
+  if (kind === "hazards") {
+    const limits = grid.derived.hazardThresholdsDeg || [10, 18];
+    return limits.map(value => `${value}°`).join(", ").replace(/, ([^,]*)$/, " and $1");
+  }
+  return (grid.derived.contourIntervalsM || [50]).map(value => `${value} m`).join(" and ");
+}
+
 // Every layer button, including disabled placeholders for kinds no loaded file contains.
 function mapLayers() {
   const needsRouting = "Needs elevation that meets the routing requirements";
   const layers = [
     {id: "contours", label: "◉ Topography", image: "contours.png", present: grid.derived.contours, derived: true,
-      title: grid.derived.contours ? "50 m contours computed from elevation" : needsRouting},
+      title: grid.derived.contours ? `Contours every ${derivedText("contours")}, interpolated from elevation` : needsRouting},
     {id: "hazards", label: "△ Hazards", image: "hazards.png", present: grid.derived.hazards, derived: true,
-      title: grid.derived.hazards ? "Slopes above 10° and 18°, computed from elevation" : needsRouting},
+      title: grid.derived.hazards ? `Slopes steeper than ${derivedText("hazards")}, computed from elevation` : needsRouting},
     ...grid.layers.map(layer => ({id: layer.id, image: layer.image, present: true,
       label: `${KIND_ICONS[layer.kind]} ${KIND_LABELS[layer.kind]} · ${shortName(layer.file)}`,
       title: `${KIND_LABELS[layer.kind]} from ${layer.file}, band ${layer.bands.join(", ")}. ${SHOWN_ONLY}.`}))
   ];
-  for (const kind of ["imagery", "mineral", "thermal"]) {
+  for (const kind of OPTIONAL_KINDS) {
     if (!grid.layers.some(layer => layer.kind === kind)) {
       layers.push({id: `missing-${kind}`, label: `${KIND_ICONS[kind]} ${KIND_LABELS[kind]}`, present: false, title: "Not in any loaded file"});
     }
@@ -158,7 +223,7 @@ function routingStatus() {
 function dataUsageText(dataUsed) {
   const shownOnly = grid.layers.map(layer => `${KIND_LABELS[layer.kind]} (${layer.file})`);
   const present = new Set(grid.layers.map(layer => layer.kind));
-  const absent = ["imagery", "mineral", "thermal"].filter(kind => !present.has(kind)).map(kind => KIND_LABELS[kind]);
+  const absent = OPTIONAL_KINDS.filter(kind => !present.has(kind)).map(kind => KIND_LABELS[kind]);
   return [`Calculated from: ${dataUsed.join("; ")}.`,
     shownOnly.length ? `Loaded but not used in route calculations: ${shownOnly.join(", ")}.` : "",
     absent.length ? `Not in the loaded files: ${absent.join(", ")}.` : "",
@@ -178,9 +243,12 @@ function inventoryHtml(meta) {
     units: meta.elevation.units, notes: meta.elevation.assumptions,
     use: meta.routing.available ? "Used for route calculations" : "Loaded, but the routing requirements are not met"
   }] : [];
-  const items = ["elevation", "imagery", "mineral", "thermal"].map(kind => {
+  const items = ["elevation", ...OPTIONAL_KINDS].map(kind => {
     const entries = [...(kind === "elevation" ? elevationEntries : []),
-      ...meta.layers.filter(layer => layer.kind === kind).map(layer => ({...layer, notes: [`has data on ${layer.coveragePercent}% of the grid`],
+      ...meta.layers.filter(layer => layer.kind === kind).map(layer => ({...layer,
+        notes: [`has data on ${layer.coveragePercent}% of the grid.`,
+          layer.legend?.type === "classes" ? `${layer.legend.items.filter(item => !item.hidden).length} classes shown.` : "",
+          layer.source ? `Source: ${sourceText(layer.source)}.` : ""].filter(Boolean),
         use: kind === "elevation" ? "Shown only; another elevation band is used for routing" : SHOWN_ONLY}))];
     const details = entries.length ? entries.map(entry => `<p><b>${escapeText(entry.file)}</b> · band ${entry.bands.join(", ")} · identified by ${escapeText(entry.identifiedBy)}${entry.units ? ` · units: ${escapeText(entry.units)}` : ""}${entry.notes?.length ? " · " + entry.notes.map(escapeText).join(" ") : ""}<br><span class="${entry.use.startsWith("Used") ? "use-routing" : "use-shown"}">${escapeText(entry.use)}</span></p>`).join("")
       : "<p>Not in any loaded file · not included in any calculation</p>";
@@ -189,7 +257,8 @@ function inventoryHtml(meta) {
   const unknown = meta.layers.filter(layer => layer.kind === "unknown")
     .map(layer => `Band ${layer.bands.join(", ")} of ${escapeText(layer.file)} could not be identified. It is shown, but not used in any calculation.`);
   const files = meta.files.map(file => `<li><b>${escapeText(file.name)}</b> — ${escapeText(fileRoleText(file))}</li>`).join("");
-  const derived = meta.derived.slope ? "Slope, hazards (slope above 10° and 18°) and 50 m contours are computed from elevation." : "";
+  const derived = meta.derived.slope
+    ? `Slope, hazards (slopes steeper than ${derivedText("hazards")}) and contours every ${derivedText("contours")} are computed from elevation.` : "";
   const status = routingStatus();
   const route = status.available
     ? `<p><b>Route calculation uses:</b> elevation from ${escapeText(meta.elevation.file)} and the slope computed from it. ${escapeText(derived)} No other layer affects the route.</p>`
@@ -460,6 +529,8 @@ async function init() {
   showMissionTerrain();
   canvas.hidden = !base;
   draw();
+  updateDemLegend();
+  updateMissionLegend();
   const status = routingStatus();
   submit.disabled = !status.available;
   if (!status.available) {
@@ -673,6 +744,7 @@ document.getElementById("demLayers").addEventListener("click", event => {
     image.src = buildUrl(source);
   }
   draw();
+  updateDemLegend();
 });
 document.getElementById("overlayOpacity").addEventListener("input", event => {
   overlayOpacity = event.target.valueAsNumber / 100;
