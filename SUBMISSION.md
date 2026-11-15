@@ -14,7 +14,7 @@ ARES Field Atlas is a map and route planner a Mars crew could use in their habit
 
 Our mission walks from a flat camp to outcrops where orbital spectra detect clays and olivine with carbonate, minerals that record past water, and finishes at the rim's high point. Every target was chosen from the data, not placed by hand.
 
-The tool never invents values. It shows which data was used for each calculation, and anything the data cannot support, such as radiation or EVA duration, is marked as not calculated. Crews can load other NASA GeoTIFFs to plan anywhere on Mars.
+The tool never invents values. It shows which data was used for each calculation, and anything the data cannot support, such as radiation, is marked as not calculated; EVA duration and oxygen use are shown only as estimates from assumptions the crew can edit. Crews can load other NASA GeoTIFFs to plan anywhere on Mars.
 
 ## Link to Project Demo
 
@@ -47,7 +47,9 @@ https://github.com/codebaser24/nasaprojecttestapp/tree/L4H1RU
 
   The default loop is 7.8 km with 427 m of ascent. Every leg is reachable even under the 10° limit.
 - **Safety from the camp.** Two analyses calculated from elevation for the camp's position: **line of sight** (where the crew can see the camp's antenna, including the curvature of Mars) and **walk-back distance** (the shortest walk back to the camp within the slope limit). For the default loop, 62% of the route is in view of the camp and the farthest point is 2.83 km from it on foot.
+- **EVA estimate.** From the calculated route and assumptions the crew can edit: walking time along each leg's real elevation profile (slope-dependent speed after Tobler's hiking function), planned time at each stop, contingency, the margin against the EVA time limit, and suit oxygen left, with warnings. An optional rover-assisted mode adds driving time, battery and solar energy. Clearly labelled as an estimate, not a measurement. For the default loop at 3 km/h on flat ground: 5 h 17 min in total.
 - **Hazard map.** Each cell is classed by its steepest slope, using the same 10°, 18° and 22° limits.
+- **Mission playback.** An animated walk along the calculated route with a heads-up display of position, elevation, slope, distance, and the estimated time and oxygen, a banner at each stop and optional spoken stop names. It can also be exported as a video file.
 - **Exports.**
   - A 2D traverse map, with a scale bar computed from the data and real corner coordinates.
   - A 3D relief view, with the route at its real elevations and an elevation profile.
@@ -83,7 +85,7 @@ https://github.com/codebaser24/nasaprojecttestapp/tree/L4H1RU
 
 ## Use of Super Intelligence (SI)
 
-Yes. We used an AI coding assistant (Claude, by Anthropic) to help write and test parts of the code and documentation, working from our team's design and decisions. The project idea, mission design and choice of data are our team's. AI-assisted code is acknowledged in the README ("Use of AI tools") and marked in the git history with a `Co-Authored-By: Claude` line on each AI-assisted commit. No AI-generated images, video, audio or data are used; every map value comes from the data sources below.
+Yes. We used AI coding assistants (Claude, by Anthropic, and GitHub Copilot) to help write and test parts of the code and documentation, working from our team's design and decisions. The project idea, mission design and choice of data are our team's. AI-assisted code is acknowledged in the README ("Use of AI tools") and marked in the git history with a `Co-Authored-By: Claude` line on each AI-assisted commit. No AI-generated images, video, audio or data are used; every map value comes from the data sources below.
 
 ## NASA Data
 

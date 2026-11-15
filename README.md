@@ -9,7 +9,7 @@ Features: a planned mission on Jezero crater's western rim, a **Data files** tab
 Tested with Python 3.15 in Chrome and Edge.
 
 ```powershell
-python -m pip install rasterio numpy contourpy pillow
+python -m pip install rasterio numpy contourpy pillow scipy
 python server.py --port 4174
 ```
 
@@ -19,7 +19,7 @@ To use other data, open the **Data files** tab, tick one or more GeoTIFFs and cl
 
 ## The mission
 
-`mission.json` defines the mission "Water on Jezero's western rim": walk from a flat camp to outcrops where CRISM spectra detect Fe/Mg clays and olivine with carbonate, compare them with pyroxene-rich rock, and finish at the rim's high point. The targets were chosen from the data, not placed by hand:
+`mission.json` defines the mission code, location and the mission "Water on Jezero's western rim": walk from a flat camp to outcrops where CRISM spectra detect Fe/Mg clays and olivine with carbonate, compare them with pyroxene-rich rock, and finish at the rim's high point. The targets were chosen from the data, not placed by hand:
 
 - each outcrop sits on a patch of CRISM mineral detections;
 - the camp is the nearest ground with no slope steeper than 4° within 120 m;
@@ -48,6 +48,15 @@ Files can also be loaded from the command line; reload the page afterwards:
 python prepare_full_dem.py M20_JezeroCrater_CTXDEM_20m.tif included-data/Jezero_ThermalInertia_100m.tif
 ```
 
+## Where everything on screen comes from
+
+Every value the app shows comes from one of two places:
+
+- **the loaded data files** (elevation, imagery, thermal, minerals, geology, and everything calculated from them, including the planet name, which is recognised from the radius in the file's coordinate system), or
+- **settings with editable defaults**: `mission.json` (mission code, location, objective and targets), the stops in the planner (names, activities, minutes and positions), and **Assumptions (editable)** in the planner (EVA, rover, line-of-sight and walk-back settings).
+
+When no mission target falls inside the loaded files, the map is titled "Loaded area" and the planner shows neutral default stops (Start, Stop 1, …) to move and rename.
+
 ## Only real data is used
 
 Every band of every selected file is classified as elevation, thermal, mineral, geology, imagery or unknown, together with how it was identified (band description or metadata, units, colour interpretation, or file name).
@@ -74,10 +83,33 @@ Bands with a colour table, or with declared `classes`, are drawn as class maps w
 
 Two layers are calculated from the elevation model for the camp's current position (they follow the camp if it is moved):
 
-- **Line of sight:** where a person 2 m tall can see an antenna 3 m above the camp, so is in visual and radio line of sight. Terrain in the elevation model blocks the view, and the curvature of Mars is included (the surface drops about 33 m below a straight line over 15 km). Calculated within 15 km of the camp. Radio range, dust and buildings are not modelled.
-- **Walk-back distance:** the shortest walking distance from every point back to the camp without a step steeper than the selected route profile's slope limit, over the same eight-neighbour grid the route search uses. Calculated within 10 km. Areas with no walking route back are marked.
+- **Line of sight:** where a person (default 2 m tall) can see an antenna (default 3 m) above the camp, so is in visual and radio line of sight. Terrain in the elevation model blocks the view, and the planet's curvature is included, using the radius from the file's coordinate system (on Mars the surface drops about 33 m below a straight line over 15 km). Calculated within 15 km of the camp by default. Radio range, dust and buildings are not modelled.
+- **Walk-back distance:** the shortest walking distance from every point back to the camp without a step steeper than the selected route profile's slope limit, over the same eight-neighbour grid the route search uses. Calculated within 10 km by default. Areas with no walking route back are marked.
+
+The heights and both distances are editable under **Assumptions (editable)** in the planner; changing them recalculates the layers.
 
 For every calculated route, the along-route results show how much of it is in view of the camp and the farthest walk back. These analyses are reported for planning; they do not change the route.
+
+## EVA estimate
+
+After the mission route is calculated, the planner estimates the EVA from the route and assumptions you can edit (open **Assumptions (editable)** under the estimate). Nothing in it is measured, and it says so.
+
+- **Walking time** is worked out step by step along each leg's real elevation profile. Speed changes with slope using the shape of Tobler's hiking function (Tobler, 1993), an Earth walking model, scaled so flat ground matches the walking speed you set.
+- **Stop time** is the planned time at each stop in your plan; a contingency time is added.
+- **Totals:** EVA duration (also shown in **Est. duration**), the margin against your EVA time limit, and suit oxygen left from the supply and use rate you enter. Warnings appear when the limit is exceeded or a supply falls below the reserve level.
+- **Rover-assisted option:** driving time, rover battery left and solar energy collected (reported separately, not added to the battery).
+- Defaults are labelled as assumptions; the oxygen and rover defaults are the demonstration values from Gihan Kesara's mission resource forecast on the `kesara` branch, which this feature is adapted from. Assumptions are saved in the browser.
+
+## Mission preview and playback video
+
+**Start mission preview** offers two ways to preview the plan:
+
+- **Animated playback:** a small astronaut walks along the calculated route on the mission map (it turns to face its direction, waves at each stop and celebrates back at camp; this is only illustration), zoomed to the route, with the walked part in green. A display bar shows the position (latitude and longitude from the loaded file's coordinate system), elevation and slope of each route step, ascent and distance so far, and the estimated EVA time and suit oxygen left from the EVA assumptions. A banner marks each stop. Play/pause, speed, a position slider and optional sound (beeps and spoken stop names) are available. It needs a calculated route.
+- **Step-by-step preview:** the planned stops one at a time.
+
+**Export mission → Playback video (WebM)** records the same playback to a 1280 × 720 video file in real time (about 30 seconds for the default mission). Keep the tab open while it records.
+
+The playback is adapted from Hirushi192's EVA traverse animation on the `nethsara` branch, rebuilt so every value comes from the loaded data or the editable assumptions.
 
 ## Map layers computed from elevation
 
@@ -101,7 +133,7 @@ The hillshading, three-level hazards and interpolated contours are adapted from 
   - `GET /api/analysis?type=viewshed|walkback&x=&y=&profile=` calculates line of sight or walk-back distance from the camp at grid cell (x, y) and returns an overlay image and legend. Route requests that include `"camp": [x, y]` also report both along the route.
   - `GET /api/region?x0=&y0=&x1=&y1=&size=` returns the corner coordinates of a grid window and, when elevation is loaded, its elevation averaged into at most `size` samples per side.
 - A* searches eight neighbouring cells using distance plus a slope penalty, rejects steps above the selected slope limit, and avoids missing elevation cells.
-- Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`, `dist/export.js`. No build step.
+- Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`, `dist/export.js`, `dist/eva.js`, `dist/playback.js`. No build step.
 
 ## Exporting a mission
 
@@ -116,10 +148,10 @@ If the route has not been calculated, the sheets join the waypoints with dashed 
 ## Limitations
 
 - The 20 m elevation pixels cannot show individual rocks or obstacles smaller than one pixel.
-- Radiation, weather, traverse speed, oxygen use and EVA duration are not modelled, because no loaded data supplies them.
+- Radiation and weather are not modelled, because no loaded data supplies them. EVA duration and oxygen use are estimates from editable assumptions, not measurements.
 - CRISM mineral positions are accurate to about 28–75 m.
 - Routes are not validated for operational navigation.
 
 ## Use of AI tools
 
-Parts of this project's code and documentation were written with the help of an AI coding assistant (Claude, by Anthropic), working from the team's design and instructions. AI-assisted commits are marked with a `Co-Authored-By: Claude` line in the git history. No AI-generated images, video or audio are used. All map data comes from the sources listed above; no data was generated by AI.
+Parts of this project's code and documentation were written with the help of AI coding assistants (Claude, by Anthropic, and GitHub Copilot, used on the `nethsara` branch), working from the team's design and instructions. AI-assisted commits are marked with a `Co-Authored-By: Claude` line in the git history. No AI-generated images, video or audio are used. All map data comes from the sources listed above; no data was generated by AI.

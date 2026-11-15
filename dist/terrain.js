@@ -223,6 +223,7 @@ function updateMissionLegend() {
   const missionBase = document.getElementById("missionBase");
   if (missionBase) missionBase.style.filter = grid.baseLayer === "elevation" && !active.includes("elevation") ? "grayscale(1)" : "";
   refreshMissionAnalyses(active);
+  window.updateEvaEstimate?.();  // Stop times may have been edited.
 }
 
 // Loads line-of-sight and walk-back overlays for the camp's current position and route profile.
@@ -232,7 +233,7 @@ function refreshMissionAnalyses(active) {
   for (const kind of Object.keys(CAMP_ANALYSES)) {
     const group = document.getElementById(kind);
     if (!group || !active.includes(kind)) continue;
-    const key = `${campCell()}|${kind === "walkback" ? missionProfile() : ""}`;
+    const key = `${campCell()}|${kind === "walkback" ? missionProfile() : ""}|${JSON.stringify(analysisSettings())}`;
     if (group.dataset.key === key) continue;
     group.dataset.key = key;
     clearTimeout(analysisTimers[kind]);
@@ -314,9 +315,15 @@ function missionProfile() {
   return {balanced: "balanced", safe: "low-exposure", science: "shortest"}[state.mode];
 }
 
+// Line-of-sight and walk-back settings from the editable assumptions (eva.js); the server has the same defaults.
+function analysisSettings() {
+  return window.analysisSettings?.() || {};
+}
+
 async function loadCampAnalysis(kind, profile) {
   const [x, y] = campCell();
-  const result = await request(`/api/analysis?type=${kind}&x=${x}&y=${y}&profile=${profile}`);
+  const settings = new URLSearchParams(Object.entries(analysisSettings()).map(([name, value]) => [name, String(value)]));
+  const result = await request(`/api/analysis?type=${kind}&x=${x}&y=${y}&profile=${profile}&${settings}`);
   grid.legends[kind] = result.legend;
   return buildUrl(result.image);
 }
@@ -393,7 +400,7 @@ function dataUsageText(dataUsed) {
   return [`Calculated from: ${dataUsed.join("; ")}.`,
     shownOnly.length ? `Loaded but not used in route calculations: ${shownOnly.join(", ")}.` : "",
     absent.length ? `Not in the loaded files: ${absent.join(", ")}.` : "",
-    "Duration and oxygen use are not calculated."].filter(Boolean).join(" ");
+    "Duration and oxygen use are estimated in the EVA estimate from editable assumptions, not from data."].filter(Boolean).join(" ");
 }
 
 function fileRoleText(file) {
@@ -448,12 +455,14 @@ function refreshMissionRouteDisplay() {
       document.getElementById(id).textContent = calculatedDisplay.fields[index];
     });
     document.getElementById("missionAlongRoute").innerHTML = calculatedDisplay.along || "";
+    window.updateEvaEstimate?.();
     return;
   }
   document.getElementById("missionAlongRoute").innerHTML = "";
   missionRouteRequest?.abort();
   missionRouteRequest = null;
   missionDemSummary = null;
+  window.updateEvaEstimate?.();
   calculatedPlan = calculatedDisplay = undefined;
   const status = grid ? routingStatus() : {available: true};
   calculateMission.disabled = state.ids.length < 2 || !status.available;
@@ -476,7 +485,7 @@ function refreshMissionRouteDisplay() {
 const calculateMission = document.getElementById("calculateMission");
 document.getElementById("loadMissionData").onclick = () => {
   if (!grid) {
-    result.textContent = "Wait for the Jezero elevation map to load.";
+    result.textContent = "Wait for the elevation map to load.";
     return;
   }
   clearDemRoute();
@@ -569,7 +578,7 @@ async function routeMissionOnDem() {
       const leg = await request("/api/route", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full", camp: campCell()}),
+      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full", camp: campCell(), analysis: analysisSettings()}),
       signal: controller.signal
     }).catch(error => {
       throw new Error(`${points[index].name} → ${(points[index + 1] || points[0]).name}: ${error.message}`);
@@ -601,6 +610,7 @@ async function routeMissionOnDem() {
     status.textContent = `${legs.length} legs including return. ${dataUsageText(legs[0].dataUsed)}`;
     missionDemSummary.alongRoute = combineAlongRoute(legs);
     missionAlong.innerHTML = alongRouteHtml(missionDemSummary.alongRoute);
+    window.updateEvaEstimate?.();
     rememberDisplay();
     await new Promise(resolve => setTimeout(resolve, 450));
   } catch (error) {
@@ -687,6 +697,12 @@ function showMissionTerrain() {
     ? `${latitude(bounds[1])} – ${latitude(bounds[3])} · ${longitude(bounds[0])} – ${longitude(bounds[2])}`
     : "—";
   document.getElementById("terrain").setAttribute("aria-label", `Map of ${grid.source} with planned mission waypoints`);
+  const place = grid.mission?.location || "Loaded area";
+  document.getElementById("mapTitle").textContent = place;
+  document.getElementById("demTitle").textContent = `Terrain routing · ${place}`;
+  document.getElementById("missionCode").textContent = (grid.mission?.code || "No mission for this area").toUpperCase();
+  const planet = grid.planet;
+  document.getElementById("planetTag").textContent = planet ? (planet.name || `RADIUS ${planet.radiusKm} KM`).toUpperCase() : "PLANET UNKNOWN";
   updateMapTransform();
   render();
 }
@@ -789,7 +805,7 @@ function confirmLongRoute(distanceKm) {
   const dialog = document.createElement("dialog");
   dialog.innerHTML = `<form method="dialog">
     <h2>Continue with a long route?</h2>
-    <p>These points are ${distanceKm.toFixed(1)} km apart in a straight line. Searching the full Jezero map may take longer.</p>
+    <p>These points are ${distanceKm.toFixed(1)} km apart in a straight line. Searching this far across the map may take longer.</p>
     <button class="quiet" value="cancel" autofocus>Cancel</button>
     <button class="primary" value="continue">Continue</button>
   </form>`;
@@ -847,7 +863,7 @@ form.onsubmit = async event => {
       method: "POST",
       signal: controller.signal,
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start, goal, profile, coverage: "full", extended, camp: campCell()})
+      body: JSON.stringify({start, goal, profile, coverage: "full", extended, camp: campCell(), analysis: analysisSettings()})
     });
     if (demRequest !== controller) return;
     clearInterval(timer);
@@ -960,7 +976,7 @@ document.getElementById("demLayers").addEventListener("click", event => {
 const demAnalysisKeys = {};
 async function loadDemAnalysis(kind) {
   const profile = document.getElementById("profile").value;
-  const key = `${campCell()}|${kind === "walkback" ? profile : ""}`;
+  const key = `${campCell()}|${kind === "walkback" ? profile : ""}|${JSON.stringify(analysisSettings())}`;
   if (demAnalysisKeys[kind] === key && demOverlays[kind]) {
     draw();
     updateDemLegend();
@@ -986,6 +1002,12 @@ async function loadDemAnalysis(kind) {
 document.getElementById("profile").addEventListener("change", () => {
   if (demLayers.has("walkback")) loadDemAnalysis("walkback");
 });
+// Called by eva.js when a line-of-sight or walk-back setting is edited.
+window.onAnalysisSettingsChange = () => {
+  if (!grid) return;
+  updateMissionLegend();
+  for (const kind of Object.keys(CAMP_ANALYSES)) if (demLayers.has(kind)) loadDemAnalysis(kind);
+};
 document.getElementById("overlayOpacity").addEventListener("input", event => {
   overlayOpacity = event.target.valueAsNumber / 100;
   document.getElementById("overlays").style.opacity = overlayOpacity;

@@ -38,7 +38,7 @@ DATA_DIRS = (INCLUDED, ROOT, UPLOADS)
 BUILDS = ROOT / "builds"
 CURRENT = BUILDS / "current.json"
 MISSION = ROOT / "mission.json"
-BUILD_VERSION = 4
+BUILD_VERSION = 5
 EXTENSIONS = (".tif", ".tiff")
 MAX_LAYERS_PER_FILE = 6
 MAX_CLASSES = 64
@@ -515,6 +515,15 @@ def locate_targets(mission, ref):
     return placed
 
 
+# Equatorial radii (IAU) used only to name the planet a file's coordinate system describes.
+KNOWN_BODIES = (("Mars", 3396190.0), ("Moon", 1737400.0), ("Earth", 6378137.0), ("Mercury", 2440530.0), ("Venus", 6051800.0))
+
+
+def planet_name(radius_m):
+    """Name of the body whose radius matches the file's ellipsoid within 1 %, or None."""
+    return next((name for name, radius in KNOWN_BODIES if abs(radius_m - radius) / radius < 0.01), None)
+
+
 def describe_value(value, legend, units):
     """Text for what one layer shows at one cell: its class name, or its value and units."""
     if legend and legend["type"] == "classes":
@@ -739,18 +748,16 @@ def build(identifiers, progress=lambda message, step, total: None):
         meta["derived"] = derived
         meta["legends"] = legends
 
-        meta["mission"] = ({key: mission.get(key) for key in ("name", "objective", "basis")}
+        meta["mission"] = ({key: mission.get(key) for key in ("code", "name", "location", "objective", "basis")}
                            if mission and targets else None)
         meta["targets"] = targets
+        axes = spheroid(ref.crs)
+        meta["planet"] = dict(radiusKm=round(axes[0] / 1000, 1), name=planet_name(axes[0])) if axes else None
+        # The planned stops start around the mission targets, or the middle of the grid without a mission.
         col, row = ref.width // 2, ref.height // 2
         if targets:
             col = int(np.mean([target["cell"][0] for target in targets]))
             row = int(np.mean([target["cell"][1] for target in targets]))
-        elif lonlat_crs(ref.crs):
-            xs, ys = transform(lonlat_crs(ref.crs), ref.crs, [77.40], [18.47])
-            jezero_row, jezero_col = ref.index(xs[0], ys[0])
-            if 0 <= jezero_row < ref.height and 0 <= jezero_col < ref.width:
-                row, col = jezero_row, jezero_col
         meta["cropOrigin"] = [max(0, min(col - 120, ref.width - 240)), max(0, min(row - 84, ref.height - 168))]
 
     advance("Finishing")

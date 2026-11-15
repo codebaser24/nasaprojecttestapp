@@ -125,7 +125,7 @@
     ctx.fillText(fitText(ctx, `ARES FIELD ATLAS  //  ${mode === "3D" ? "3D ELEVATION RELIEF" : "2D TRAVERSE MAP"}  //  ${grid.source}`, W - 2 * MARGIN - 560), MARGIN, MARGIN + 16);
     ctx.fillStyle = TEXT;
     ctx.font = "bold 30px system-ui, sans-serif";
-    ctx.fillText(mode === "3D" ? "MISSION 004 — 3D RELIEF AND ROUTE PROFILE" : "MISSION 004 — SURFACE TRAVERSE MAP", MARGIN, MARGIN + 52);
+    ctx.fillText(`${missionLabel().toUpperCase()} — ${mode === "3D" ? "3D RELIEF AND ROUTE PROFILE" : "SURFACE TRAVERSE MAP"}`, MARGIN, MARGIN + 52);
     ctx.textAlign = "right";
     ctx.fillStyle = MUTED;
     ctx.font = "bold 12px monospace";
@@ -281,6 +281,24 @@
         ctx.fillText(v2, px + width / 2 + 6, y);
         y += 28;
       }
+      const eva = summary.eva;
+      if (eva) {
+        const hours = value => {
+          const minutes = Math.round(value * 60);
+          return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+        };
+        ctx.fillStyle = MUTED;
+        ctx.font = "bold 10px monospace";
+        ctx.fillText("EVA ESTIMATE (FROM EDITABLE ASSUMPTIONS, NOT MEASURED)", px, y);
+        y += 16;
+        ctx.fillStyle = "#cfd8c8";
+        ctx.font = "11.5px system-ui, sans-serif";
+        const lines = [`Total ${hours(eva.totalHours)}: ${eva.assumptions.rover ? "driving" : "walking"} ${hours(eva.travelHours)}, at stops ${hours(eva.stopHours)}, contingency ${hours(eva.contingencyHours)}.`,
+          `Suit oxygen left ${Math.max(0, eva.oxygenLeftPercent).toFixed(0)}%; ${eva.limitMarginHours < 0 ? "over" : "within"} the ${eva.assumptions.evaLimitH} h limit by ${hours(Math.abs(eva.limitMarginHours))}.`,
+          ...eva.warnings.map(text => `Warning: ${text}`)];
+        for (const line of lines) y = wrapText(ctx, line, px, y, width, 15);
+        y += 6;
+      }
       const along = alongSummary();
       if (along.length) {
         ctx.fillStyle = MUTED;
@@ -310,7 +328,7 @@
     y += 10;
     heading(`02 // WAYPOINTS (${String(points().length).padStart(2, "0")} STOPS)`);
     points().forEach((point, index) => {
-      if (y > y0 + MAP.h * 0.55) return;
+      if (y > y0 + MAP.h * 0.74) return;
       const elevation = legs()?.[index]?.elevationsM?.[0];
       ctx.fillStyle = index ? "#19201c" : "rgba(212, 243, 148, 0.12)";
       ctx.fillRect(px, y - 15, width, 42);
@@ -736,7 +754,7 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `ares-mission-004-${mode.toLowerCase()}-map.png`;
+      link.download = `ares-${missionLabel().toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${mode.toLowerCase()}-map.png`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
       notify(`${mode} mission map exported`);
@@ -749,19 +767,29 @@
     }
   }
 
+  // The visible map layers, also used by the playback video (playback.js).
+  window.sheetLayers = visibleLayers;
+
   // Called by the Export mission button in app.js.
   window.openExportChooser = () => {
     const loaded = typeof grid !== "undefined" && grid && typeof base !== "undefined" && base;
     const has3D = loaded && grid.routing.available;
     const routeNote = missionDemSummary?.legs?.length ? "Includes the calculated route." : "The route is not calculated yet, so waypoints are joined in order and marked as such.";
-    modal(`<div class="eyebrow">MISSION 004 EXPORT</div><h2>Export the mission plan</h2>
+    const hasVideo = Boolean(missionDemSummary?.legs?.length && window.playbackVideoSupported?.());
+    const videoSeconds = Math.round(22 + 1.4 * (missionDemSummary?.legs?.length || 0) + 2.5);
+    modal(`<div class="eyebrow">${escapeText(missionLabel()).toUpperCase()} EXPORT</div><h2>Export the mission plan</h2>
       <p>Every value on the map sheets comes from the loaded files, the calculated route or your plan. ${escapeText(routeNote)}</p>
       <button class="choice" id="export2D"${loaded ? "" : " disabled"}><strong>2D traverse map (PNG)</strong><br>
         <small>Base map and visible layers, waypoints, route, scale bar, corner coordinates, legends and data sources.</small></button>
       <button class="choice" id="export3D"${has3D ? "" : " disabled"}><strong>3D relief and route profile (PNG)</strong><br>
         <small>${has3D ? "Elevation shown in 3D with the visible layers draped on it, and the elevation profile along the route." : "Needs elevation that meets the routing requirements."}</small></button>
+      <button class="choice" id="exportVideo"${hasVideo ? "" : " disabled"}><strong>Playback video (WebM)</strong><br>
+        <small>${!window.playbackVideoSupported?.() ? "This browser cannot record video." : hasVideo
+          ? `The animated EVA playback along the calculated route, recorded in real time (about ${videoSeconds} s). Keep this tab open while it records.`
+          : "Calculate the route first: the video follows the calculated route."}</small></button>
       <button class="choice" id="exportJson"><strong>Mission data (JSON)</strong><br>
         <small>Waypoints, route, and which data was and was not used.</small></button>`);
+    document.getElementById("exportVideo").onclick = () => { document.getElementById("modal").close(); window.exportPlaybackVideo(); };
     document.getElementById("export2D").onclick = () => { document.getElementById("modal").close(); exportSheet("2D"); };
     document.getElementById("export3D").onclick = () => { document.getElementById("modal").close(); exportSheet("3D"); };
     document.getElementById("exportJson").onclick = () => { document.getElementById("modal").close(); exportMissionJson(); };
