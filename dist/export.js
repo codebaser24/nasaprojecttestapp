@@ -19,6 +19,8 @@
   const points = () => state.ids.map(id => catalog.find(point => point.id === id)).filter(Boolean);
   const cellOf = point => [Math.floor(point.x / 1000 * grid.width), Math.floor(point.y / 700 * grid.height)];
   const legs = () => missionDemSummary?.legs?.length ? missionDemSummary.legs : null;
+  // Matches the mission map: grey base map when elevation colours are switched off.
+  const baseFilter = () => grid.baseLayer === "elevation" && !state.layers.includes("elevation") ? "grayscale(1)" : "none";
   const profileName = () => ({balanced: "Balanced · 18° cap", "low-exposure": "Lower slope · 10° cap", shortest: "Shortest · 22° cap"})[missionDemSummary?.profile] || "";
 
   // Visible mission layers in the order the map draws them: file layers, then contours, then hazards.
@@ -293,7 +295,7 @@
     });
     y += 6;
     heading("03 // LAYERS ON THIS SHEET");
-    drawLegend(ctx, [...baseLegendIds(), ...visibleLayers().map(layer => layer.id)], px, y, width, bottom);
+    drawLegend(ctx, [...baseLegendIds(state.layers), ...visibleLayers().map(layer => layer.id)], px, y, width, bottom);
   }
 
   function drawFooter(ctx) {
@@ -337,7 +339,9 @@
     ctx.fillStyle = "#191e1b";
     ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
     ctx.imageSmoothingQuality = "high";
+    ctx.filter = baseFilter();
     ctx.drawImage(base, win.x0, win.y0, win.w, win.h, ox, oy, drawW, drawH);
+    ctx.filter = "none";
     for (const layer of visibleLayers()) {
       const image = await loadImage(buildUrl(layer.image));
       if (!image) continue;
@@ -447,7 +451,9 @@
     sampler.height = rows;
     const sctx = sampler.getContext("2d", {willReadFrequently: true});
     sctx.imageSmoothingQuality = "high";
+    sctx.filter = baseFilter();
     sctx.drawImage(base, win.x0, win.y0, win.w, win.h, 0, 0, win.w / step, win.h / step);
+    sctx.filter = "none";
     for (const layer of visibleLayers()) {
       const image = await loadImage(buildUrl(layer.image));
       if (!image) continue;

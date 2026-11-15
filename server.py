@@ -21,6 +21,16 @@ import dataset
 ROOT = Path(__file__).resolve().parent
 PROFILES = {"balanced": (18, 2), "low-exposure": (10, 6), "shortest": (22, 0)}
 MAX_UPLOAD_BYTES = 4 * 1024 ** 3
+# Loaded automatically when nothing has been loaded yet. The full Jezero DEM is used when it has been
+# downloaded; otherwise the 14 km mission-area window included in the repository is used.
+FULL_DEM, MISSION_DEM = "M20_JezeroCrater_CTXDEM_20m.tif", "included-data/Jezero_WesternRim_Elevation_CTX_20m.tif"
+DEFAULT_LAYERS = ["included-data/Jezero_ThermalInertia_100m.tif", "included-data/Jezero_WesternRim_Minerals_CRISM.tif",
+                  "included-data/Jezero_Geology_USGS_SIM3464.tif"]
+
+
+def default_files():
+    elevation = FULL_DEM if (ROOT / FULL_DEM).exists() else MISSION_DEM
+    return [name for name in [elevation, *DEFAULT_LAYERS] if (ROOT / name).exists()]
 build_lock = threading.Lock()
 build_status = {"state": "idle"}
 
@@ -277,6 +287,14 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(202, {"state": "building"})
             if path == "/api/files/upload":
                 return self.upload()
+            if path == "/api/files/hide":
+                payload = self.read_json()
+                identifier, hidden = payload["file"], payload["hidden"] is True
+                loaded = {file["id"] for file in (current_meta() or {}).get("files", []) if file["role"] != "excluded"}
+                if hidden and identifier in loaded:
+                    raise ValueError("This file is loaded. Load a selection without it before hiding it.")
+                dataset.set_hidden(identifier, hidden)
+                return self.respond(200, {"file": identifier, "hidden": hidden})
             return self.respond(404, {"error": "Unknown endpoint"})
         except InsufficientData as error:
             routing = (current_meta() or {}).get("routing", {})
@@ -342,5 +360,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=4173)
     args = parser.parse_args()
+    # On a fresh copy nothing is loaded yet: load the mission files included in the repository.
+    defaults = default_files()
+    if current_meta() is None and defaults:
+        print("Loading the included mission data: " + ", ".join(defaults), flush=True)
+        build_status.update(state="building", message="Starting", step=0, total=1)
+        threading.Thread(target=run_build, args=(defaults,), daemon=True).start()
     print(f"ARES atlas: http://127.0.0.1:{args.port}/", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()

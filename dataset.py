@@ -33,10 +33,12 @@ from rasterio.windows import Window
 
 ROOT = Path(__file__).resolve().parent
 UPLOADS = ROOT / "data"
-DATA_DIRS = (ROOT, UPLOADS)
+INCLUDED = ROOT / "included-data"  # Data files that come with the repository.
+DATA_DIRS = (INCLUDED, ROOT, UPLOADS)
 BUILDS = ROOT / "builds"
 CURRENT = BUILDS / "current.json"
-BUILD_VERSION = 2
+MISSION = ROOT / "mission.json"
+BUILD_VERSION = 3
 EXTENSIONS = (".tif", ".tiff")
 MAX_LAYERS_PER_FILE = 6
 MAX_CLASSES = 64
@@ -218,8 +220,32 @@ def inspect(path):
     return info
 
 
+HIDDEN = BUILDS / "hidden-files.json"
+
+
+def hidden_files():
+    """Files the user has hidden from the Data files list. Hiding never touches the file itself."""
+    try:
+        return set(json.loads(HIDDEN.read_text()))
+    except (FileNotFoundError, ValueError):
+        return set()
+
+
+def set_hidden(identifier, hidden):
+    resolve(identifier)  # Only files the listing would show can be hidden.
+    names = hidden_files()
+    if hidden:
+        names.add(identifier)
+    else:
+        names.discard(identifier)
+    BUILDS.mkdir(exist_ok=True)
+    HIDDEN.write_text(json.dumps(sorted(names)))
+
+
 def list_files():
-    return [inspect(path) for path in candidate_paths()]
+    hidden = hidden_files()
+    return [{**inspect(path), "hidden": file_id(path) in hidden, "included": path.parent == INCLUDED}
+            for path in candidate_paths()]
 
 
 # ----------------------------------------------------------------- alignment
@@ -454,7 +480,57 @@ def selection_key(identifiers):
     parts = [BUILD_VERSION]
     for identifier in dict.fromkeys(identifiers):
         parts.append([identifier, *file_version(resolve(identifier))])
+    if MISSION.exists():
+        parts.append(["mission.json", MISSION.stat().st_mtime_ns])
     return hashlib.sha1(json.dumps(parts).encode()).hexdigest()[:16]
+
+
+# ------------------------------------------------------------------- mission
+
+def load_mission():
+    """The planned mission: an objective and named targets given by longitude and latitude."""
+    if not MISSION.exists():
+        return None
+    try:
+        return json.loads(MISSION.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise ValueError(f"mission.json is not valid JSON: {error}")
+
+
+def locate_targets(mission, ref):
+    """Place the mission's targets on the reference grid; targets outside it are left out."""
+    lonlat = lonlat_crs(ref.crs)
+    if not mission or not lonlat:
+        return []
+    placed = []
+    for target in mission.get("targets", []):
+        xs, ys = transform(lonlat, ref.crs, [target["lon"]], [target["lat"]])
+        row, col = ref.index(xs[0], ys[0])
+        if 0 <= row < ref.height and 0 <= col < ref.width:
+            placed.append({**target, "cell": [int(col), int(row)], "data": []})
+    return placed
+
+
+def describe_value(value, legend, units):
+    """Text for what one layer shows at one cell: its class name, or its value and units."""
+    if legend and legend["type"] == "classes":
+        item = next((entry for entry in legend["items"] if entry.get("value") == int(value)), None)
+        if item is None:
+            return None
+        return item["name"] + (" (detected, but not drawn on the map)" if item.get("hidden") else "")
+    return f"{value:.4g} {units}" if units else f"{value:.4g} (units not stated in the file)"
+
+
+def steepest_slope(heights, row, col, dx, dy):
+    """Steepest slope in degrees from one cell to any valid neighbouring cell."""
+    steepest = 0.0
+    for oy in (-1, 0, 1):
+        for ox in (-1, 0, 1):
+            r, c = row + oy, col + ox
+            if (oy or ox) and 0 <= r < heights.shape[0] and 0 <= c < heights.shape[1] and np.isfinite(heights[r, c]):
+                rise = abs(float(heights[r, c]) - float(heights[row, col]))
+                steepest = max(steepest, float(np.degrees(np.arctan(rise / np.hypot(ox * dx, oy * dy)))))
+    return steepest
 
 
 def read_on_grid(src, index, ref, is_reference):
@@ -497,7 +573,9 @@ def build(identifiers, progress=lambda message, step, total: None):
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     reference_id = layout["grid"]["reference"]
+    mission = load_mission()
     with rasterio.open(resolve(reference_id)) as ref:
+        targets = locate_targets(mission, ref)
         units_name, factor = linear_units(ref.crs)
         dx = abs(ref.transform.a) * (factor or 1)
         dy = abs(ref.transform.e) * (factor or 1)
@@ -555,6 +633,14 @@ def build(identifiers, progress=lambda message, step, total: None):
                                        bands=[band["band"]], identifiedBy=band["identifiedBy"], units=band["units"],
                                        image=f"{layer_id}.png", coveragePercent=stats["gridCoveragePercent"],
                                        legend=legend, note=band["note"], source=info["source"]))
+                    # Record what this layer shows at each mission target.
+                    for target in targets:
+                        col, row = target["cell"]
+                        if np.isfinite(values[row, col]):
+                            text = describe_value(float(values[row, col]), legend, band["units"])
+                            if text:
+                                target["data"].append(dict(kind=band["kind"], file=entry["name"], layer=layer_id,
+                                                           text=text, usedForRouting=False))
                 if len(rgb_values) == 3:
                     stack = [rgb_values[b] for b in sorted(rgb_values, key=lambda b: ("red", "green", "blue").index(
                         next(x["colour"] for x in bands if x["band"] == b)))]
@@ -613,6 +699,12 @@ def build(identifiers, progress=lambda message, step, total: None):
                                         colours=[hex_colour(c) for c in (ELEVATION_PALETTE if factor else ((0, 0, 0), (255, 255, 255)))],
                                         note=note)
             meta.update(baseImage="base.png", baseLayer="elevation")
+            for target in targets:
+                col, row = target["cell"]
+                if np.isfinite(heights[row, col]):
+                    slope = f" · steepest slope to a neighbouring cell {steepest_slope(heights, row, col, dx, dy):.1f}°" if factor else ""
+                    target["data"].insert(0, dict(kind="elevation", file=elevation["file"], layer="elevation",
+                                                  text=f"{heights[row, col]:.0f} m{slope}", usedForRouting=True))
         elif layers:
             shutil.copyfile(work / layers[0]["image"], work / "base.png")
             meta.update(baseImage="base.png", baseLayer=layers[0]["id"])
@@ -638,8 +730,14 @@ def build(identifiers, progress=lambda message, step, total: None):
         meta["derived"] = derived
         meta["legends"] = legends
 
+        meta["mission"] = ({key: mission.get(key) for key in ("name", "objective", "basis")}
+                           if mission and targets else None)
+        meta["targets"] = targets
         col, row = ref.width // 2, ref.height // 2
-        if lonlat_crs(ref.crs):
+        if targets:
+            col = int(np.mean([target["cell"][0] for target in targets]))
+            row = int(np.mean([target["cell"][1] for target in targets]))
+        elif lonlat_crs(ref.crs):
             xs, ys = transform(lonlat_crs(ref.crs), ref.crs, [77.40], [18.47])
             jezero_row, jezero_col = ref.index(xs[0], ys[0])
             if 0 <= jezero_row < ref.height and 0 <= jezero_col < ref.width:

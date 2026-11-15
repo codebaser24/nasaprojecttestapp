@@ -5,3 +5,9 @@ M20_JezeroCrater_CTXDEM_20m.tif
 jezero-full.f32
 builds/
 data/
+server-*.log
+# Old pre-build images; the app now serves these from builds/.
+dist/jezero-contours.png
+dist/jezero-hazards.png
+dist/jezero-full.png
+dist/jezero-full.json

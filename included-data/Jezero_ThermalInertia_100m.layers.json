@@ -1,0 +1,11 @@
+{
+  "source": {
+    "title": "Jezero thermal inertia map (originally Jezero_Thermal_Inertia_v1.tiff); its source is not recorded in the file"
+  },
+  "bands": {
+    "1": {
+      "kind": "thermal",
+      "note": "Thermal inertia, not temperature: it describes how quickly the surface heats up and cools down. Low values suggest dust or sand; high values suggest rock or cemented ground. The file does not state its units."
+    }
+  }
+}

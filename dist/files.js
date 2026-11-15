@@ -12,6 +12,8 @@
   let selected = [];
   let loadedIds = new Set();
   let alignmentRequest;
+  let showHidden = false;
+  const toggleHidden = document.getElementById("toggleHidden");
 
   const escape = escapeWaypointText;
 
@@ -39,22 +41,33 @@
     return a.length === b.size && a.every(id => b.has(id));
   }
 
+  function hideButton(file) {
+    if (file.hidden) return `<br><button type="button" class="link-button" data-hide="${escape(file.id)}" data-hidden="false">Show in list</button>`;
+    if (loadedIds.has(file.id)) return "";
+    return `<br><button type="button" class="link-button" data-hide="${escape(file.id)}" data-hidden="true" title="Hide from this list. The file is not deleted.">Hide</button>`;
+  }
+
   function renderRows() {
-    if (!files.length) {
-      rows.innerHTML = '<tr><td colspan="6">No .tif or .tiff files found in the project folder or data/. Use Browse computer… to add one.</td></tr>';
+    const hiddenCount = files.filter(file => file.hidden).length;
+    toggleHidden.hidden = !hiddenCount;
+    toggleHidden.textContent = showHidden ? "Hide hidden files" : `Show hidden files (${hiddenCount})`;
+    const visible = files.filter(file => showHidden || !file.hidden);
+    if (!visible.length) {
+      rows.innerHTML = `<tr><td colspan="6">${files.length ? "All files are hidden. Use Show hidden files." : "No .tif or .tiff files found in the project folder or data/. Use Browse computer… to add one."}</td></tr>`;
       return;
     }
-    rows.innerHTML = files.map(file => {
-      const usable = file.readable && !file.error;
-      const status = !usable ? `<span class="file-error">${escape(file.error || "Cannot be read")}</span>`
+    rows.innerHTML = visible.map(file => {
+      const usable = file.readable && !file.error && !file.hidden;
+      const status = file.hidden ? '<span class="muted">Hidden</span>'
+        : !(file.readable && !file.error) ? `<span class="file-error">${escape(file.error || "Cannot be read")}</span>`
         : loadedIds.has(file.id) ? '<span class="file-loaded">Loaded</span>' : "Ready";
       return `<tr class="${usable ? "" : "unusable"}">
         <td><input type="checkbox" data-file="${escape(file.id)}" aria-label="Select ${escape(file.name)}"${selected.includes(file.id) ? " checked" : ""}${usable ? "" : " disabled"}></td>
-        <td><b>${escape(file.name)}</b><br><small>${escape(file.folder === "." ? "project folder" : file.folder)} · ${formatSize(file.sizeBytes)}</small></td>
+        <td><b>${escape(file.name)}</b>${file.included ? ' <span class="included-badge" title="This file comes with the repository; no download needed.">Included with the repository</span>' : ""}<br><small>${escape(file.folder === "." ? "project folder" : file.folder)} · ${formatSize(file.sizeBytes)}</small></td>
         <td>${contentsHtml(file)}</td>
         <td>${file.width ? `${file.width} × ${file.height}` : "—"}</td>
         <td>${pixelText(file)}</td>
-        <td>${status}</td></tr>`;
+        <td>${status}${hideButton(file)}</td></tr>`;
     }).join("");
   }
 
@@ -143,7 +156,7 @@
     fileStatus.textContent = "Reading files…";
     try {
       ({files} = await request("/api/files"));
-      const known = new Set(files.filter(file => file.readable && !file.error).map(file => file.id));
+      const known = new Set(files.filter(file => file.readable && !file.error && !file.hidden).map(file => file.id));
       selected = selected.filter(id => known.has(id));
       fileStatus.textContent = `${files.length} file${files.length === 1 ? "" : "s"} found`;
     } catch (error) {
@@ -190,6 +203,28 @@
   };
 
   document.getElementById("refreshFiles").onclick = loadFileList;
+
+  // Hiding only removes a file from this list; the file itself is never deleted.
+  rows.addEventListener("click", async event => {
+    const button = event.target.closest("[data-hide]");
+    if (!button) return;
+    const hide = button.dataset.hidden === "true";
+    button.disabled = true;
+    try {
+      await request("/api/files/hide", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file: button.dataset.hide, hidden: hide})});
+      if (hide) selected = selected.filter(id => id !== button.dataset.hide);
+      await loadFileList();
+      fileStatus.textContent = hide ? `Hidden from the list (not deleted): ${button.dataset.hide}` : `Shown again: ${button.dataset.hide}`;
+    } catch (error) {
+      fileStatus.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+  toggleHidden.onclick = () => {
+    showHidden = !showHidden;
+    renderRows();
+  };
 
   function sendFile(file) {
     return new Promise((resolve, reject) => {

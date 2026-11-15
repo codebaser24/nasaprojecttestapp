@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111513"><title>ARES / Field Atlas</title><link rel="stylesheet" href="style.css?v=data-files-7"></head>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111513"><title>ARES / Field Atlas</title><link rel="stylesheet" href="style.css?v=data-files-12"></head>
 <body><aside class="rail"><a class="mark" href="./" aria-label="ARES home">A<span>•</span></a><button class="rail-button active" title="Field atlas" aria-label="Field atlas">◎</button><button class="rail-button" id="scienceNav" title="Science targets" aria-label="Science targets">⚗</button><button class="rail-button" id="logNav" title="Mission briefing" aria-label="Mission briefing">▤</button><button class="rail-button" id="filesNav" title="Data files" aria-label="Data files">⛁</button><div class="rail-bottom">M<br>A<br>R<br>S</div></aside>
 <div class="workspace"><header><div class="brand">Space<span>Byte</span></div><div class="header-status"><span class="live"></span> MISSION PLANNER <span class="divider">|</span> <span class="time" id="dataStatus">LOADING DATA…</span></div><div><button id="briefing" class="quiet">Mission briefing ↗</button></div></header>
 <main><section class="heading"><div><div class="eyebrow">SURFACE OPERATIONS <span>/</span> MISSION 004</div><h1>A little further. <em>A world to discover.</em></h1><p>Plan your traverse. Read the terrain. Make every step count.</p></div><button class="primary" id="export">↓ Export mission</button></section>
@@ -35,9 +35,21 @@
 <section id="files-panel" role="tabpanel" hidden aria-labelledby="files-view">
   <h2>Data files</h2>
   <p>Select one or more GeoTIFF files to load together. Files are aligned onto one reference grid using their georeferencing. <strong>Only elevation is used to calculate routes;</strong> every other layer is shown for reference only.</p>
+  <details class="file-guide" open>
+    <summary>How to add your own data files</summary>
+    <ol>
+      <li><b>Get a GeoTIFF of Mars</b> (<code>.tif</code> or <code>.tiff</code>) that has map coordinates. Elevation models are available from <a href="https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic" target="_blank" rel="noopener">USGS Astrogeology</a> and the <a href="https://stac.astrogeology.usgs.gov/docs/data/mars/hirise_dtms/" target="_blank" rel="noopener">USGS HiRISE and CTX elevation catalogue</a>.</li>
+      <li><b>Add it:</b> click <b>Browse computer…</b> (the file is copied into the <code>data/</code> folder, up to 4 GB), or copy it into <code>data/</code> yourself and click <b>Refresh list</b>.</li>
+      <li><b>Check the Contents column.</b> Each band is identified as elevation, thermal, minerals, geology or imagery. If a band shows as <i>Unidentified</i>, put a <code>&lt;file name&gt;.layers.json</code> file next to it that says what it holds, for example <code>{"bands": {"1": {"kind": "elevation", "units": "m"}}}</code>.</li>
+      <li><b>Tick the files to use together.</b> Include at least one elevation file to calculate routes. The alignment preview shows how the files overlap; files from another area or another planet are not loaded, and the reason is shown.</li>
+      <li><b>Click Load selected files.</b> The map reloads with a layer button and legend for each file.</li>
+    </ol>
+    <p class="muted">Files labelled <b>Included with the repository</b> come with the project. <b>Hide</b> removes a file from this list without deleting it.</p>
+  </details>
   <div class="file-toolbar">
     <label class="quiet file-browse">Browse computer… <input type="file" id="fileUpload" accept=".tif,.tiff" multiple></label>
     <button type="button" class="quiet" id="refreshFiles">Refresh list</button>
+    <button type="button" class="quiet" id="toggleHidden" hidden>Show hidden files</button>
     <span id="fileStatus" role="status"></span>
   </div>
   <div class="file-table-wrap"><table class="file-table">
@@ -49,4 +61,4 @@
   <div class="file-actions"><button type="button" class="primary" id="loadFiles" disabled>Load selected files</button><span id="buildStatus" role="status"></span></div>
   <h3>Currently loaded</h3>
   <div id="loadedFiles"><p class="muted">Nothing loaded yet.</p></div>
-</section><footer><span><i class="live"></i> BUILT FOR THE NEXT GIANT LEAP.</span><span>Calculations use only data in the loaded files <button id="about">About this atlas ↗</button></span></footer></main></div><dialog id="modal"><button class="close" aria-label="Close dialog">×</button><div id="modalContent"></div></dialog><div id="toast" role="status"></div><script src="app.js?v=data-files-7"></script><script src="terrain.js?v=data-files-7"></script><script src="views.js?v=data-files-7"></script><script src="files.js?v=data-files-7"></script><script src="export.js?v=data-files-7"></script></body></html>
+</section><footer><span><i class="live"></i> BUILT FOR THE NEXT GIANT LEAP.</span><span>Calculations use only data in the loaded files <button id="about">About this atlas ↗</button></span></footer></main></div><dialog id="modal"><button class="close" aria-label="Close dialog">×</button><div id="modalContent"></div></dialog><div id="toast" role="status"></div><script src="app.js?v=data-files-12"></script><script src="terrain.js?v=data-files-12"></script><script src="views.js?v=data-files-12"></script><script src="files.js?v=data-files-12"></script><script src="export.js?v=data-files-12"></script></body></html>

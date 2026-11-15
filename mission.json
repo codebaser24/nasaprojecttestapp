@@ -1,0 +1,19 @@
+{
+  "name": "Water on Jezero's western rim",
+  "objective": "Walk from a flat camp on Jezero crater's western rim to outcrops where orbital spectra show minerals formed or altered by water: Fe/Mg clays and olivine with carbonate. Compare them with nearby pyroxene-rich rock, whose spectra show no alteration minerals, and finish with a panorama from the rim's high point.",
+  "basis": "Each outcrop is placed on a patch of CRISM mineral detections in included-data/Jezero_WesternRim_Minerals_CRISM.tif (positions accurate to about 28–75 m). The camp is the nearest ground with no slope steeper than 4° within 120 m in the CTX elevation model. The viewpoint is the highest elevation within 2 km of the centre of the outcrop cluster. Every leg was checked to be reachable under all three route slope limits.",
+  "targets": [
+    {"id": "hab", "name": "Rim camp", "type": "Start / life support", "time": 0, "lon": 77.3395, "lat": 18.3162,
+     "detail": "Flat ground chosen from the elevation data: no slope steeper than 4° within 120 m."},
+    {"id": "clay", "name": "Clay outcrop", "type": "Mineral sampling", "time": 30, "lon": 77.2939, "lat": 18.3078,
+     "detail": "CRISM detects Fe/Mg phyllosilicates here: clay minerals that form when water alters rock."},
+    {"id": "basalt", "name": "Pyroxene outcrop", "type": "Rock comparison", "time": 20, "lon": 77.2957, "lat": 18.3044,
+     "detail": "CRISM detects pyroxene-rich rock about 220 m from the clays. Compare it with the altered rock nearby."},
+    {"id": "delta", "name": "Olivine–carbonate outcrop", "type": "Astrobiology sampling", "time": 30, "lon": 77.3345, "lat": 18.2839,
+     "detail": "CRISM detects strong olivine with carbonate here. Carbonate can form when water reacts with olivine and can preserve signs of past environments."},
+    {"id": "ridge", "name": "Weak olivine exposure", "type": "Mineral survey", "time": 15, "lon": 77.3405, "lat": 18.2990,
+     "detail": "CRISM detects a weaker olivine signature: a contrast to the stronger olivine–carbonate outcrop to the south."},
+    {"id": "rim", "name": "Rim viewpoint", "type": "Panoramic imaging", "time": 20, "lon": 77.3035, "lat": 18.2693,
+     "detail": "Highest point in the elevation data within 2 km of the outcrop cluster: a panorama across the rim and down into the crater."}
+  ]
+}

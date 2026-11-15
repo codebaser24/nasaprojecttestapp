@@ -40,7 +40,10 @@ function draw() {
   context.translate(canvas.width / 2 + demX, canvas.height / 2 + demY);
   context.scale(demZoom, demZoom);
   context.translate(-canvas.width / 2, -canvas.height / 2);
+  // With elevation colours off, the shaded base map is drawn in grey so other layers stand out.
+  context.filter = grid.baseLayer === "elevation" && !demLayers.has("elevation") ? "grayscale(1)" : "none";
   context.drawImage(base, 0, 0);
+  context.filter = "none";
   for (const layer of demLayers) {
     const overlay = demOverlays[layer];
     context.globalAlpha = layer === "contours" || layer === "hazards" ? 1 : overlayOpacity;
@@ -134,19 +137,23 @@ function legendHtml(ids) {
   }).join("");
 }
 
-function baseLegendIds() {
-  return grid?.baseLayer === "elevation" ? ["elevation-base"] : grid?.baseLayer ? [grid.baseLayer] : [];
+// The elevation colour legend is shown only while elevation colours are switched on.
+function baseLegendIds(active = ["elevation"]) {
+  if (grid?.baseLayer === "elevation") return active.includes("elevation") ? ["elevation-base"] : [];
+  return grid?.baseLayer ? [grid.baseLayer] : [];
 }
 
 function updateDemLegend() {
-  if (grid) document.getElementById("demLegend").innerHTML = legendHtml([...baseLegendIds(), ...demLayers]);
+  if (grid) document.getElementById("demLegend").innerHTML = legendHtml([...baseLegendIds([...demLayers]), ...demLayers]);
 }
 
 // Called by render() in app.js whenever the mission map's layers change.
 function updateMissionLegend() {
   if (!grid) return;
   const active = state.layers.filter(id => availableLayers.has(id));
-  document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(), ...active]);
+  document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(active), ...active]);
+  const missionBase = document.getElementById("missionBase");
+  if (missionBase) missionBase.style.filter = grid.baseLayer === "elevation" && !active.includes("elevation") ? "grayscale(1)" : "";
 }
 
 // Legends sit under the map normally. In fullscreen that space is gone, so the legend moves
@@ -227,6 +234,9 @@ function derivedText(kind) {
 function mapLayers() {
   const needsRouting = "Needs elevation that meets the routing requirements";
   const layers = [
+    // Elevation colours on the base map, after Gihan Kesara's elevation control on the kesara branch.
+    ...(grid.baseLayer === "elevation" ? [{id: "elevation", label: "▲ Elevation colours", present: true, derived: true,
+      title: "Colour the shaded base map by elevation. Turn off for a grey shaded map that makes other layers easier to read."}] : []),
     {id: "contours", label: "◉ Topography", image: "contours.png", present: grid.derived.contours, derived: true,
       title: grid.derived.contours ? `Contours every ${derivedText("contours")}, interpolated from elevation` : needsRouting},
     {id: "hazards", label: "△ Hazards", image: "hazards.png", present: grid.derived.hazards, derived: true,
@@ -498,14 +508,24 @@ function showMissionTerrain() {
   frame.setAttribute("transform", `scale(1 ${frameHeight / 700})`);
   world.before(frame);
   frame.append(world);
+  // Mission targets from mission.json, placed on this grid by the build, replace the built-in stops.
+  const targets = new Map((grid.targets || []).map(target => [target.id, target]));
   for (const point of catalog) {
     if (point.id.startsWith("custom-")) continue;
+    const target = targets.get(point.id);
+    if (target) {
+      Object.assign(point, {name: target.name, type: target.type, time: target.time, detail: target.detail,
+        dataHere: target.data, x: (target.cell[0] + 0.5) / grid.width * 1000, y: (target.cell[1] + 0.5) / grid.height * 700});
+      continue;
+    }
     point.x = (grid.cropOrigin[0] + Math.floor(point.x / 1000 * 240) + 0.5) / grid.width * 1000;
     point.y = (grid.cropOrigin[1] + Math.floor(point.y / 700 * 168) + 0.5) / grid.height * 700;
   }
+  if (grid.mission) document.querySelector(".planner-title p").textContent = `Mission: ${grid.mission.name}`;
   applyWaypointEdits();
   if (base) {
     setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
+    document.querySelector("#mapWorld > image").id = "missionBase";
     document.getElementById("map").classList.add("has-real-terrain");
   } else {
     document.querySelector("#terrainFallback text").textContent = "NO DISPLAYABLE LAYER IN THE LOADED FILES";
@@ -552,6 +572,12 @@ async function init() {
   for (const layer of mapLayers()) if (layer.present) availableLayers.add(layer.id);
   document.getElementById("missionLayers").innerHTML = layerButtonsHtml("data-layer");
   document.getElementById("demLayers").innerHTML = layerButtonsHtml("data-dem-layer");
+  if (grid.baseLayer === "elevation") {
+    demLayers.add("elevation");
+    const button = document.querySelector('[data-dem-layer="elevation"]');
+    button.classList.add("active");
+    button.setAttribute("aria-pressed", "true");
+  }
   document.getElementById("missionInventory").innerHTML = inventoryHtml(meta);
   document.getElementById("demInventory").innerHTML = inventoryHtml(meta);
   document.getElementById("dataStatus").textContent = `DATA: ${includedFiles().map(file => file.name).join(" + ")}`;
@@ -560,6 +586,8 @@ async function init() {
   fields.forEach((field, i) => field.max = (i % 2 ? grid.height : grid.width) - 1);
   start = [grid.cropOrigin[0] + 40, grid.cropOrigin[1] + 80];
   goal = [grid.cropOrigin[0] + 190, grid.cropOrigin[1] + 100];
+  const [camp, firstStop] = [grid.targets?.find(target => target.id === "hab"), grid.targets?.find(target => target.id !== "hab")];
+  if (camp && firstStop) [start, goal] = [[...camp.cell], [...firstStop.cell]];
   [...start, ...goal].forEach((value, index) => fields[index].value = value);
   showMissionTerrain();
   canvas.hidden = !base;
