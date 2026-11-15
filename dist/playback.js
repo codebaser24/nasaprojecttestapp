@@ -57,6 +57,21 @@
     return {segments, duration: t};
   }
 
+  // Playback time at which the estimated oxygen used reaches the suit supply, or null if it lasts.
+  // Estimated time only grows along the playback, so a binary search finds the moment.
+  function oxygenOutTime(track, line) {
+    const a = track.model?.assumptions;
+    if (!a || !(a.oxygenUseKgH > 0)) return null;
+    const limit = a.oxygenSupplyKg / a.oxygenUseKgH;
+    if (frameAt(track, line, line.duration).hours < limit) return null;
+    let lo = 0, hi = line.duration;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (frameAt(track, line, mid).hours >= limit) hi = mid; else lo = mid;
+    }
+    return hi;
+  }
+
   // Everything shown at playback time t: position and values interpolated between route steps.
   function frameAt(track, line, t) {
     const segment = line.segments.find(s => t < s.t1) || line.segments[line.segments.length - 1];
@@ -89,7 +104,7 @@
       ["Ascent so far", `${Math.round(frame.ascent)} m`],
       ["Distance", `${(frame.distance / 1000).toFixed(2)} / ${(track.total / 1000).toFixed(2)} km`],
       ["EVA time (estimate)", a ? hoursText(frame.hours) : "Not estimated"],
-      ["Suit oxygen left (estimate)", oxygen === null ? "Not estimated" : `${Math.max(0, oxygen).toFixed(0)}%`]
+      ["Suit oxygen left (estimate)", oxygen === null ? "Not estimated" : oxygen <= 0 ? "0%: out of oxygen" : `${oxygen.toFixed(0)}%`, oxygen !== null && oxygen <= 0]
     ];
   }
 
@@ -132,12 +147,18 @@
   // A walking figure that faces its direction of travel, waves at each stop and celebrates back at
   // camp. After the walking astronaut on the nethsara branch. It only illustrates the playback.
   let lastFacing = 1;
-  function pose(track, frame, t) {
+  function pose(track, frame, t, fall = 0) {
     const ahead = track.samples[Math.min(track.samples.length - 1, frame.index + 3)];
     const behind = track.samples[Math.max(0, frame.index - 3)];
     if (ahead.x !== behind.x) lastFacing = ahead.x > behind.x ? 1 : -1;
+    if (fall > 0) {
+      // Out of oxygen: a short stagger, then it topples forward and lies still with a dark visor.
+      const eased = Math.min(1, Math.max(0, (fall - 0.25) / 0.75)) ** 2;
+      const stagger = fall < 0.35 ? Math.sin(fall * 60) * 7 : 0;
+      return {facing: lastFacing, waving: false, swing: 0, bob: 0, wave: 0, jump: 0, fall: eased * 84 * lastFacing + stagger, dark: fall > 0.5};
+    }
     const waving = Boolean(frame.pause) || frame.done;
-    return {
+    return {fall: 0, dark: false,
       facing: lastFacing,
       waving,
       swing: waving ? 0 : Math.sin(frame.distance / 24) * 28,           // one stride every ~150 m of playback
@@ -165,7 +186,7 @@
     group.setAttribute("transform", `translate(${x} ${y}) scale(${scaleX} ${scaleY})`);
     const body = group.querySelector(".pb-a-body");
     // Walking: side view, flipped to face the way it walks. Waving: turned towards the viewer.
-    body.setAttribute("transform", `translate(0 ${-p.bob - p.jump}) scale(${p.waving ? 1 : p.facing} 1)`);
+    body.setAttribute("transform", `rotate(${p.fall}) translate(0 ${-p.bob - p.jump}) scale(${p.waving ? 1 : p.facing} 1)`);
     const legs = p.waving ? [0, 0] : [-p.swing, p.swing];
     group.querySelector(".pb-a-leg-back").setAttribute("transform", `translate(-1.2 -9) rotate(${legs[0]})`);
     group.querySelector(".pb-a-leg-front").setAttribute("transform", `translate(1.2 -9) rotate(${legs[1]})`);
@@ -175,6 +196,7 @@
     const visor = group.querySelector(".pb-a-visor");
     visor.setAttribute("cx", p.waving ? 0 : 2);
     visor.setAttribute("rx", p.waving ? 3.9 : 3.1);
+    visor.style.fill = p.dark ? "#3a3226" : "";
   }
 
   // The same figure on a canvas, for the video.
@@ -200,6 +222,7 @@
     ctx.beginPath();
     ctx.ellipse(0, 0, 7, 2.2, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.rotate(p.fall * Math.PI / 180);
     ctx.translate(0, -p.bob - p.jump);
     ctx.scale(p.waving ? 1 : p.facing, 1);
     const suit = "#f1f4f6", edge = "#7d8790";
@@ -226,9 +249,25 @@
     ctx.stroke();
     ctx.beginPath();
     ctx.ellipse(p.waving ? 0 : 2, -26.5, p.waving ? 3.9 : 3.1, 2.7, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#e3a72f";
+    ctx.fillStyle = p.dark ? "#3a3226" : "#e3a72f";
     ctx.fill();
     ctx.restore();
+  }
+
+  // A falling tone for running out of oxygen.
+  function alarm() {
+    try {
+      audio ||= new AudioContext();
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(520, audio.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(110, audio.currentTime + 1.2);
+      gain.gain.setValueAtTime(0.1, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 1.3);
+      osc.connect(gain).connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + 1.3);
+    } catch {}
   }
 
   // ---------------------------------------------------------------- playback on the mission map
@@ -240,7 +279,7 @@
     live.layer.remove();
     live.hud.remove();
     live.banner.remove();
-    live.end?.remove(); live.end = null;
+    clearEnd();
     document.getElementById("routeLine").style.opacity = "";
     document.getElementById("terrain").setAttribute("viewBox", live.viewBox);
     document.getElementById("pins").style.display = "";
@@ -287,7 +326,7 @@
     hud.innerHTML = `<div class="pb-top"><b>${escape(track.code)} · EVA playback (simulation)</b><span class="pb-status"></span>
         <div class="pb-controls"><button type="button" class="pb-play">Pause</button><button type="button" class="pb-speed">1×</button>
         <button type="button" class="pb-sound" aria-pressed="false">Sound off</button><button type="button" class="pb-close">Close</button></div></div>
-      <div class="pb-values"></div>
+      <div class="pb-values pb-live-values"></div>
       <input type="range" class="pb-scrub" min="0" max="1000" value="0" aria-label="Playback position">
       <small>Position, elevation and slope come from the loaded data along the calculated route. Time and oxygen are estimates from the EVA assumptions.</small>`;
     map.append(hud);
@@ -297,7 +336,8 @@
     hud.append(banner);  // Sits just above the display bar, below the route.
     document.getElementById("targetCard").hidden = true;
     live = {track, line, layer, hud, banner, t: 0, speed: 1, playing: true, sound: false, last: performance.now(), announced: 0,
-      viewBox: focusOnRoute(track)};
+      viewBox: focusOnRoute(track), out: oxygenOutTime(track, line), collapseStart: null, alarmed: false};
+    live.stopAt = live.out ?? line.duration;
     // Map units per screen pixel after zooming, so markers keep the same size on screen.
     const svg = document.getElementById("terrain");
     live.unit = Math.max(svg.viewBox.baseVal.width / svg.clientWidth, svg.viewBox.baseVal.height / svg.clientHeight);
@@ -310,7 +350,7 @@
     }).join("");
 
     hud.querySelector(".pb-play").onclick = () => {
-      if (live.t >= line.duration) { live.t = 0; live.announced = 0; live.end?.remove(); live.end = null; }
+      if (live.t >= live.stopAt) { live.t = 0; live.announced = 0; live.alarmed = false; live.collapseStart = null; clearEnd(); }
       live.playing = !live.playing;
       live.last = performance.now();
       draw();
@@ -326,15 +366,17 @@
     };
     hud.querySelector(".pb-close").onclick = stopPlayback;
     hud.querySelector(".pb-scrub").oninput = event => {
-      live.t = event.target.valueAsNumber / 1000 * line.duration;
+      live.t = Math.min(live.stopAt, event.target.valueAsNumber / 1000 * line.duration);
       live.announced = frameAt(track, line, live.t).arrived;
-      live.end?.remove(); live.end = null;
+      live.alarmed = live.t >= live.stopAt;
+      if (live.t < live.stopAt) live.collapseStart = null;
+      clearEnd();
       draw();
     };
     if (live.sound) say("Playback started.");
     const tick = now => {
       if (!live) return;
-      if (live.playing && live.t < line.duration) live.t = Math.min(line.duration, live.t + (now - live.last) / 1000 * live.speed);
+      if (live.playing && live.t < live.stopAt) live.t = Math.min(live.stopAt, live.t + (now - live.last) / 1000 * live.speed);
       live.last = now;
       draw();
       if (live) live.raf = requestAnimationFrame(tick);
@@ -355,12 +397,28 @@
     const marker = layer.querySelector(".pb-marker");
     marker.setAttribute("transform", `translate(${mx} ${my}) scale(1 ${live.squash})`);
     marker.querySelector(".pb-pulse").setAttribute("r", (9 + 2 * Math.sin(performance.now() / 220)) * live.unit);
+    const outOfOxygen = live.out !== null && live.t >= live.out;
+    if (outOfOxygen) live.collapseStart ??= performance.now();
+    const fall = outOfOxygen ? Math.max(0.001, Math.min(1, (performance.now() - live.collapseStart) / 1600)) : 0;
     const figure = 38 / 32 * live.unit;  // About 38 pixels tall on screen.
-    placeAstronaut(layer.querySelector(".pb-astronaut"), mx, my, figure, figure * live.squash, pose(track, frame, live.t));
-    hud.querySelector(".pb-status").textContent = statusText(track, frame);
-    hud.querySelector(".pb-values").innerHTML = values(track, frame).map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("");
+    placeAstronaut(layer.querySelector(".pb-astronaut"), mx, my, figure, figure * live.squash, pose(track, frame, live.t, fall));
+    hud.querySelector(".pb-status").textContent = outOfOxygen ? "Out of oxygen (estimate)" : statusText(track, frame);
+    hud.querySelector(".pb-live-values").innerHTML = values(track, frame).map(([label, value, alarmed]) =>
+      `<div${alarmed ? ' class="pb-alarm"' : ""}><span>${label}</span><b>${escape(value)}</b></div>`).join("");
     hud.querySelector(".pb-scrub").value = String(Math.round(live.t / line.duration * 1000));
-    hud.querySelector(".pb-play").textContent = live.t >= line.duration ? "Replay" : live.playing ? "Pause" : "Play";
+    hud.querySelector(".pb-play").textContent = live.t >= live.stopAt ? "Replay" : live.playing ? "Pause" : "Play";
+    if (outOfOxygen) {
+      banner.hidden = false;
+      banner.classList.add("pb-banner-alarm");
+      banner.textContent = `Out of oxygen · ${(frame.distance / 1000).toFixed(2)} km along the route`;
+      if (!live.alarmed) {
+        live.alarmed = true;
+        if (live.sound) { alarm(); say("Oxygen depleted."); }
+      }
+      if (fall >= 1 && !live.end) showEnd(track, frame);
+      return;
+    }
+    banner.classList.remove("pb-banner-alarm");
     if (frame.pause) {
       banner.hidden = false;
       banner.textContent = `${frame.pause.label} · ${frame.pause.name}`;
@@ -374,17 +432,46 @@
     if (frame.done && !live.end) showEnd(track);
   }
 
-  function showEnd(track) {
+  // The end card takes the place of the live values in the display bar, so the map stays visible.
+  function showEndCard(end) {
+    const row = live.hud.querySelector(".pb-live-values");
+    row.hidden = true;
+    row.after(end);
+    live.end = end;
+  }
+
+  function clearEnd() {
+    if (!live) return;
+    live.end?.remove();
+    live.end = null;
+    live.hud.querySelector(".pb-live-values").hidden = false;
+  }
+
+  function showEnd(track, outFrame) {
     const end = document.createElement("div");
     end.className = "playback-end";
     const last = track.samples[track.samples.length - 1];
+    if (outFrame) {
+      const a = track.model.assumptions;
+      end.classList.add("pb-end-alarm");
+      end.innerHTML = `<div class="eyebrow">${escape(track.code)} · OUT OF OXYGEN (ESTIMATE)</div>
+        <div class="pb-values">${[["Ran out at", `${(outFrame.distance / 1000).toFixed(2)} of ${(track.total / 1000).toFixed(2)} km`],
+          ["EVA time", hoursText(outFrame.hours)], ["Stops reached", String(Math.min(outFrame.arrived, track.stops.length - 1))],
+          ["Oxygen supply", `${a.oxygenSupplyKg} kg at ${a.oxygenUseKgH} kg/h`]]
+          .map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("")}</div>
+        <small>With these EVA assumptions the suit runs out of oxygen before the crew is back at camp. Increase the oxygen supply,
+        shorten the route or remove stops (EVA estimate, Assumptions). This is a planning estimate, not a measurement.</small>`;
+      showEndCard(end);
+      live.end = end;
+      return;
+    }
     end.innerHTML = `<div class="eyebrow">${escape(track.code)} · PLAYBACK COMPLETE</div>
       <div class="pb-values">${[["Distance", `${(track.summary.distanceM / 1000).toFixed(2)} km`], ["Total ascent", `${track.summary.ascentM} m`],
         ["Steepest step", `${track.summary.maxSlopeDeg.toFixed(1)}°`], ["Stops visited", String(track.stops.length - 1)],
         ["EVA time (estimate)", track.model ? hoursText(last.hours) : "Not estimated"]]
         .map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("")}</div>
       <small>A playback of the plan, not a record of a traverse. Time excludes the contingency in the EVA estimate.</small>`;
-    live.hud.before(end);
+    showEndCard(end);
     live.end = end;
   }
 
@@ -448,8 +535,12 @@
       canvas.height = VIDEO.height;
       const ctx = canvas.getContext("2d");
       const endCard = 2.5;
+      const out = oxygenOutTime(track, line);       // When the estimated oxygen runs out, if it does.
+      const stopAt = out ?? line.duration;
       const drawFrame = t => {
-        const frame = frameAt(track, line, Math.min(t, line.duration));
+        const frame = frameAt(track, line, Math.min(t, stopAt));
+        const outOfOxygen = out !== null && t >= out;
+        const fall = outOfOxygen ? Math.max(0.001, Math.min(1, (t - out) / 1.6)) : 0;
         ctx.drawImage(background, 0, 0);
         ctx.lineCap = ctx.lineJoin = "round";
         ctx.setLineDash([8, 7]);
@@ -488,16 +579,16 @@
         ctx.ellipse(mx, my, 11 + 2 * Math.sin(t * 6), 4.5, 0, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(34, 197, 94, 0.35)";
         ctx.fill();
-        drawAstronaut(ctx, mx, my, 44, pose(track, frame, t));
-        if (frame.pause && !frame.done) {
-          const text = `${frame.pause.label} · ${frame.pause.name}`;
+        drawAstronaut(ctx, mx, my, 44, pose(track, frame, t, fall));
+        if ((frame.pause && !frame.done) || outOfOxygen) {
+          const text = outOfOxygen ? `Out of oxygen · ${(frame.distance / 1000).toFixed(2)} km along the route` : `${frame.pause.label} · ${frame.pause.name}`;
           ctx.font = "bold 18px system-ui, sans-serif";
           const width = ctx.measureText(text).width + 36;
           ctx.fillStyle = "rgba(11, 15, 13, 0.92)";
           ctx.fillRect(W / 2 - width / 2, 18, width, 40);
-          ctx.strokeStyle = "#d4f394";
+          ctx.strokeStyle = outOfOxygen ? "#ff6b5e" : "#d4f394";
           ctx.strokeRect(W / 2 - width / 2, 18, width, 40);
-          ctx.fillStyle = "#d4f394";
+          ctx.fillStyle = outOfOxygen ? "#ffb4a8" : "#d4f394";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(text, W / 2, 39);
@@ -513,26 +604,47 @@
         ctx.textAlign = "right";
         ctx.fillStyle = "#f4f7ee";
         ctx.font = "15px system-ui, sans-serif";
-        ctx.fillText(t >= line.duration ? "Playback complete" : statusText(track, frame), W - 24, M + 30);
+        ctx.fillStyle = outOfOxygen ? "#ffb4a8" : "#f4f7ee";
+        ctx.fillText(outOfOxygen ? "Out of oxygen (estimate)" : t >= line.duration ? "Playback complete" : statusText(track, frame), W - 24, M + 30);
         ctx.textAlign = "left";
         const cells = values(track, frame);
         const columnW = (W - 48) / cells.length;
-        cells.forEach(([labelText, value], i) => {
+        cells.forEach(([labelText, value, alarmed], i) => {
           const x = 24 + i * columnW;
           ctx.fillStyle = "#8b9689";
           ctx.font = "bold 10px monospace";
           ctx.fillText(labelText.toUpperCase(), x, M + 62);
-          ctx.fillStyle = "#ffffff";
+          ctx.fillStyle = alarmed ? "#ff8a7d" : "#ffffff";
           ctx.font = `bold ${i === 0 ? 13 : 16}px system-ui, sans-serif`;
           ctx.fillText(value, x, M + 86);
         });
         ctx.fillStyle = "#2a332d";
         ctx.fillRect(24, M + 104, W - 48, 6);
         ctx.fillStyle = "#22c55e";
-        ctx.fillRect(24, M + 104, (W - 48) * Math.min(1, t / line.duration), 6);
+        ctx.fillStyle = outOfOxygen ? "#ff6b5e" : "#22c55e";
+        ctx.fillRect(24, M + 104, (W - 48) * Math.min(1, Math.min(t, stopAt) / line.duration), 6);
         ctx.fillStyle = "#8b9689";
         ctx.font = "11px system-ui, sans-serif";
         ctx.fillText("Position, elevation and slope from the loaded data along the calculated route. Time and oxygen are estimates from the EVA assumptions, not measurements.", 24, M + 136);
+        if (outOfOxygen && fall >= 1) {
+          // Closing card: where the plan runs out of oxygen.
+          ctx.fillStyle = "rgba(11, 15, 13, 0.94)";
+          ctx.fillRect(W / 2 - 300, M / 2 - 80, 600, 160);
+          ctx.strokeStyle = "#ff6b5e";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(W / 2 - 300, M / 2 - 80, 600, 160);
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#ffb4a8";
+          ctx.font = "bold 22px system-ui, sans-serif";
+          ctx.fillText("OUT OF OXYGEN (ESTIMATE)", W / 2, M / 2 - 34);
+          ctx.fillStyle = "#f4f7ee";
+          ctx.font = "16px system-ui, sans-serif";
+          ctx.fillText(`Ran out ${(frame.distance / 1000).toFixed(2)} of ${(track.total / 1000).toFixed(2)} km into the EVA, after ${hoursText(frame.hours)}.`, W / 2, M / 2 + 4);
+          ctx.fillStyle = "#9aa698";
+          ctx.font = "13px system-ui, sans-serif";
+          ctx.fillText("Increase the oxygen supply, shorten the route or remove stops.", W / 2, M / 2 + 34);
+          ctx.textAlign = "left";
+        }
       };
       const stream = canvas.captureStream(VIDEO.fps);
       const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(t => MediaRecorder.isTypeSupported(t));
@@ -540,7 +652,7 @@
       const chunks = [];
       recorder.ondataavailable = event => event.data.size && chunks.push(event.data);
       const finished = new Promise(resolve => recorder.onstop = resolve);
-      const total = line.duration + endCard;
+      const total = (out !== null ? out + 1.6 + 1.5 : line.duration) + endCard;
       drawFrame(0);
       recorder.start();
       const started = performance.now();

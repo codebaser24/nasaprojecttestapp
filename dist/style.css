@@ -313,3 +313,9 @@ dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14
 .pb-astronaut .pb-a-badge { fill: #d4f394; stroke: none; }
 .pb-astronaut .pb-a-visor { fill: #e3a72f; }
 .pb-astronaut .pb-a-shadow { fill: rgba(0, 0, 0, .35); }
+.playback-hud .pb-alarm b { color: #ff8a7d; }
+.playback-banner.pb-banner-alarm { border-color: #ff6b5e; color: #ffb4a8; }
+.playback-end.pb-end-alarm { border-color: #ff6b5e; }
+.playback-end.pb-end-alarm .eyebrow { color: #ffb4a8; }
+.playback-hud .playback-end { position: static; transform: none; width: auto; padding: 10px 12px; }
+.playback-hud .pb-live-values[hidden] { display: none; }
