@@ -299,33 +299,31 @@
                   <span class="mission-demo-badge">SIMULATED</span>
                 </div>
 
+                <details class="mission-parameters" open>
+                  <summary>⚙ Mission Parameters <span class="forecast-hint">Editable simulation inputs</span></summary>
+                  <p class="parameter-intro">Adjust starting resources and equipment assumptions. Forecasts update without recalculating the DEM route.</p>
+                  <div class="mission-parameter-grid" id="missionParameters">
+                    <label>Starting battery (%)<input id="startingBatteryPercent" type="number" min="0" max="100" step="0.1" value="82" required></label>
+                    <label>Battery capacity (kWh)<input id="batteryCapacityKWh" type="number" min="0.01" max="10000" step="0.01" value="2.5" required></label>
+                    <label>Driving use (kWh/km)<input id="driveKWhPerKm" type="number" min="0" max="1000" step="0.001" value="0.085" required></label>
+                    <label>Climbing use (kWh/m)<input id="climbKWhPerMeter" type="number" min="0" max="100" step="0.00001" value="0.00015" required></label>
+                    <label>Starting oxygen (%)<input id="startingOxygenPercent" type="number" min="0" max="100" step="0.1" value="91" required></label>
+                    <label>Oxygen capacity (kg)<input id="oxygenCapacityKg" type="number" min="0.01" max="10000" step="0.01" value="1" required></label>
+                    <label>Oxygen use (kg/h)<input id="oxygenRateKgH" type="number" min="0" max="1000" step="0.001" value="0.076" required></label>
+                    <label>Travel speed (km/h)<input id="speedKmH" type="number" min="0.1" max="1000" step="0.1" value="8" required></label>
+                    <label>Science activity (hours)<input id="scienceHours" type="number" min="0" max="1000" step="0.1" value="0.5" required></label>
+                    <label>Contingency (hours)<input id="contingencyHours" type="number" min="0" max="1000" step="0.1" value="0.5" required></label>
+                    <label>Solar input (W)<input id="solarPowerW" type="number" min="0" max="1000000" step="1" value="120" required></label>
+                    <label>Solar collection efficiency (%)<input id="solarEfficiencyPercent" type="number" min="0" max="100" step="1" value="70" required></label>
+                    <label>Low reserve warning (%)<input id="reserveWarningPercent" type="number" min="0" max="100" step="1" value="20" required></label>
+                  </div>
+                  <p id="parameterError" class="parameter-error" role="status" hidden></p>
+                  <button type="button" class="quiet parameter-reset" id="resetMissionParameters">Restore demo defaults</button>
+                </details>
                 <div class="mission-resource-grid">
-                  <div class="mission-resource">
-                    <span>Vehicle Battery</span>
-                    <strong>82%</strong>
-                    <div class="mission-meter">
-                      <div class="mission-meter-fill" style="width: 82%"></div>
-                    </div>
-                    <small>Demo charge level</small>
-                  </div>
-
-                  <div class="mission-resource">
-                    <span>Suit Oxygen</span>
-                    <strong>91%</strong>
-                    <div class="mission-meter">
-                      <div
-                        class="mission-meter-fill oxygen"
-                        style="width: 91%"
-                      ></div>
-                    </div>
-                    <small>Demo oxygen level</small>
-                  </div>
-
-                  <div class="mission-resource">
-                    <span>Solar Input</span>
-                    <strong>120 W</strong>
-                    <small>Estimated input power</small>
-                  </div>
+                  <div class="mission-resource"><span>Vehicle Battery</span><strong id="batteryStartingDisplay">82%</strong><div class="mission-meter"><div class="mission-meter-fill" id="batteryStartingMeter" style="width:82%"></div></div><small>Entered charge level</small></div>
+                  <div class="mission-resource"><span>Suit Oxygen</span><strong id="oxygenStartingDisplay">91%</strong><div class="mission-meter"><div class="mission-meter-fill oxygen" id="oxygenStartingMeter" style="width:91%"></div></div><small>Entered oxygen level</small></div>
+                  <div class="mission-resource"><span>Solar Input</span><strong id="solarStartingDisplay">120 W</strong><small>Entered solar input</small></div>
                 </div>
                 <details class="mission-forecast">
                   <summary>
@@ -351,12 +349,7 @@
 
                     <p id="resourceWarning" class="resource-warning" role="status" aria-live="polite" hidden></p>
                     <p id="forecastDuration" class="forecast-duration">Mission duration: Awaiting route</p>
-                    <p class="forecast-note">
-                      Route-informed simulation, not operational guidance. Assumes 8 km/h travel,
-                      30 min science activity, 30 min contingency, 2.5 kWh battery,
-                      120 W solar input at 70% collection efficiency. Solar harvest is
-                      reported separately and is not credited to battery charge.
-                    </p>
+                    <p class="forecast-note">Route-informed what-if simulation using the editable parameters above. Solar energy is reported separately and is not credited to battery charge. Not operational guidance.</p>
                   </div>
                 </details>
                 <p class="mission-cockpit-note">
@@ -600,7 +593,7 @@
     </dialog>
     <div id="toast" role="status"></div>
     <script src="app.js?v=mission-fullscreen-tools"></script>
-    <script src="terrain.js?v=resources-v1"></script>
+    <script src="terrain.js?v=resources-inputs-v2"></script>
     <script src="views.js?v=dem-controls"></script>
   </body>
 </html>

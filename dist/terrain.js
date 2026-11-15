@@ -299,51 +299,114 @@ calculateMission.onclick = () => {
       "Open the dashboard through the local server and reload to load the elevation data.";
     return;
   }
-  routeMissionOnDem();
+  try {
+    readMissionParameters();
+    routeMissionOnDem();
+  } catch (error) {
+    const message = document.getElementById("parameterError");
+    message.hidden = false;
+    message.textContent = error.message;
+    document.querySelector(".mission-parameters").open = true;
+  }
 };
-function calculateOxygenForecast(distanceM) {
-  // Demonstration assumptions
-  const speedKmH = 8;
-  const scienceHours = 0.5;
-  const contingencyHours = 0.5;
-
-  const oxygenCapacityKg = 1.0;
-  const startingOxygenPercent = 91;
-  const oxygenRateKgH = 0.076;
-
-  // Convert route distance from meters to kilometers
-  const distanceKm = distanceM / 1000;
-
-  // Calculate total mission duration
-  const travelHours = distanceKm / speedKmH;
-  const missionHours = travelHours + scienceHours + contingencyHours;
-
-  // Calculate oxygen consumption
-  const oxygenUsedKg = missionHours * oxygenRateKgH;
-
-  // Calculate remaining oxygen
-  const startingOxygenKg = oxygenCapacityKg * (startingOxygenPercent / 100);
-
-  const remainingOxygenKg = startingOxygenKg - oxygenUsedKg;
-
-  const remainingOxygenPercent = (remainingOxygenKg / oxygenCapacityKg) * 100;
-
-  return {
-    missionHours,
-    oxygenUsedKg,
-    remainingOxygenPercent,
-  };
-}
-// Demonstration-only parameters; not validated Mars vehicle or EVA specifications.
-const RESOURCE_MODEL = Object.freeze({
+// Defaults are demonstration assumptions, not verified Mars equipment data.
+const RESOURCE_DEFAULTS = Object.freeze({
   startingBatteryPercent: 82,
   batteryCapacityKWh: 2.5,
   driveKWhPerKm: 0.085,
   climbKWhPerMeter: 0.00015,
-  solarPowerKW: 0.12,
-  solarEfficiency: 0.7,
+  startingOxygenPercent: 91,
+  oxygenCapacityKg: 1,
+  oxygenRateKgH: 0.076,
+  speedKmH: 8,
+  scienceHours: 0.5,
+  contingencyHours: 0.5,
+  solarPowerW: 120,
+  solarEfficiencyPercent: 70,
   reserveWarningPercent: 20,
 });
+const RESOURCE_BOUNDS = {
+  startingBatteryPercent: [0, 100],
+  batteryCapacityKWh: [0.01, 10000],
+  driveKWhPerKm: [0, 1000],
+  climbKWhPerMeter: [0, 100],
+  startingOxygenPercent: [0, 100],
+  oxygenCapacityKg: [0.01, 10000],
+  oxygenRateKgH: [0, 1000],
+  speedKmH: [0.1, 1000],
+  scienceHours: [0, 1000],
+  contingencyHours: [0, 1000],
+  solarPowerW: [0, 1000000],
+  solarEfficiencyPercent: [0, 100],
+  reserveWarningPercent: [0, 100],
+};
+function readMissionParameters() {
+  const values = {};
+  for (const [id, [min, max]] of Object.entries(RESOURCE_BOUNDS)) {
+    const input = document.getElementById(id);
+    const value = input.value.trim() === "" ? NaN : Number(input.value);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`${id}: enter a number from ${min} to ${max}.`);
+    }
+    values[id] = value;
+  }
+  return values;
+}
+function updateStartingResourceDisplays(parameters) {
+  const display = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  display("batteryStartingDisplay", `${parameters.startingBatteryPercent}%`);
+  display("oxygenStartingDisplay", `${parameters.startingOxygenPercent}%`);
+  display("solarStartingDisplay", `${parameters.solarPowerW} W`);
+  document.getElementById("batteryStartingMeter").style.width =
+    `${parameters.startingBatteryPercent}%`;
+  document.getElementById("oxygenStartingMeter").style.width =
+    `${parameters.startingOxygenPercent}%`;
+}
+function updateResourceInputs() {
+  const errorDisplay = document.getElementById("parameterError");
+  try {
+    const parameters = readMissionParameters();
+    errorDisplay.hidden = true;
+    errorDisplay.textContent = "";
+    updateStartingResourceDisplays(parameters);
+    if (missionDemSummary && calculatedPlan === missionPlanKey()) {
+      const forecast = calculateResourceForecast(
+        missionDemSummary.distanceM,
+        missionDemSummary.ascentM,
+        parameters,
+      );
+      showResourceForecast(forecast, parameters);
+      missionDemSummary.resources = {
+        ...forecast,
+        model: "illustrative-user-input-v2",
+        assumptions: { ...parameters },
+      };
+      const duration = document.getElementById("duration");
+      duration.textContent = `${Math.floor(forecast.missionHours)}h ${Math.round((forecast.missionHours % 1) * 60)}m`;
+      if (calculatedDisplay) {
+        calculatedDisplay.fields = routeDisplayIds.map(
+          (id) => document.getElementById(id).textContent,
+        );
+      }
+    } else resetResourceForecast();
+  } catch (error) {
+    errorDisplay.hidden = false;
+    errorDisplay.textContent = error.message;
+    resetResourceForecast();
+    if (missionDemSummary) missionDemSummary.resources = null;
+  }
+}
+const missionParameterPanel = document.getElementById("missionParameters");
+missionParameterPanel.addEventListener("input", updateResourceInputs);
+document.getElementById("resetMissionParameters").onclick = () => {
+  for (const [id, value] of Object.entries(RESOURCE_DEFAULTS))
+    document.getElementById(id).value = value;
+  updateResourceInputs();
+};
+updateResourceInputs();
 
 function resetResourceForecast() {
   for (const id of ["oxygenForecast", "batteryForecast", "solarForecast"]) {
@@ -359,22 +422,36 @@ function resetResourceForecast() {
   }
 }
 
-function calculateResourceForecast(distanceM, ascentM) {
-  const oxygen = calculateOxygenForecast(distanceM);
+function calculateResourceForecast(distanceM, ascentM, parameters) {
+  const missionHours =
+    distanceM / 1000 / parameters.speedKmH +
+    parameters.scienceHours +
+    parameters.contingencyHours;
+  const oxygenUsedKg = missionHours * parameters.oxygenRateKgH;
+  const remainingOxygenPercent =
+    parameters.startingOxygenPercent -
+    (oxygenUsedKg / parameters.oxygenCapacityKg) * 100;
   const energyUsedKWh =
-    (distanceM / 1000) * RESOURCE_MODEL.driveKWhPerKm +
-    ascentM * RESOURCE_MODEL.climbKWhPerMeter;
+    (distanceM / 1000) * parameters.driveKWhPerKm +
+    ascentM * parameters.climbKWhPerMeter;
   const batteryRemainingPercent =
-    RESOURCE_MODEL.startingBatteryPercent -
-    (energyUsedKWh / RESOURCE_MODEL.batteryCapacityKWh) * 100;
+    parameters.startingBatteryPercent -
+    (energyUsedKWh / parameters.batteryCapacityKWh) * 100;
   const solarHarvestKWh =
-    RESOURCE_MODEL.solarPowerKW *
-    RESOURCE_MODEL.solarEfficiency *
-    oxygen.missionHours;
-  return { ...oxygen, energyUsedKWh, batteryRemainingPercent, solarHarvestKWh };
+    (((parameters.solarPowerW / 1000) * parameters.solarEfficiencyPercent) /
+      100) *
+    missionHours;
+  return {
+    missionHours,
+    oxygenUsedKg,
+    remainingOxygenPercent,
+    energyUsedKWh,
+    batteryRemainingPercent,
+    solarHarvestKWh,
+  };
 }
 
-function showResourceForecast(forecast) {
+function showResourceForecast(forecast, parameters) {
   const display = (id, value) => {
     const element = document.getElementById(id);
     if (element) element.textContent = value;
@@ -392,17 +469,16 @@ function showResourceForecast(forecast) {
     "forecastDuration",
     `Mission duration: ${forecast.missionHours.toFixed(2)} h (including science and contingency)`,
   );
-
   const alerts = [];
   for (const [label, value] of [
     ["Battery", forecast.batteryRemainingPercent],
     ["Oxygen", forecast.remainingOxygenPercent],
   ]) {
     if (value < 0)
-      alerts.push(`${label} demand exceeds the simulated starting supply`);
-    else if (value < RESOURCE_MODEL.reserveWarningPercent)
+      alerts.push(`${label} demand exceeds the entered starting supply`);
+    else if (value < parameters.reserveWarningPercent)
       alerts.push(
-        `${label} below ${RESOURCE_MODEL.reserveWarningPercent}% reserve`,
+        `${label} below ${parameters.reserveWarningPercent}% reserve`,
       );
   }
   const warning = document.getElementById("resourceWarning");
@@ -501,16 +577,18 @@ async function routeMissionOnDem() {
       legs,
     };
     // The route already includes the return leg; never double its distance.
+    const parameters = readMissionParameters();
     const resources = calculateResourceForecast(
       total,
       missionDemSummary.ascentM,
+      parameters,
     );
     missionDemSummary.resources = {
       ...resources,
-      model: "illustrative-v1",
-      assumptions: RESOURCE_MODEL,
+      model: "illustrative-user-input-v2",
+      assumptions: { ...parameters },
     };
-    showResourceForecast(resources);
+    showResourceForecast(resources, parameters);
     document.getElementById("duration").textContent =
       `${Math.floor(resources.missionHours)}h ${Math.round((resources.missionHours % 1) * 60)}m`;
     distance.innerHTML = `${(total / 1000).toFixed(2)} <small>km</small>`;

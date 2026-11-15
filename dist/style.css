@@ -1666,3 +1666,15 @@ body:has(.map-expanded) {
   font-size: 11px;
   line-height: 1.5;
 }
+
+/* Editable mission assumptions */
+.mission-parameters { margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #141a16; }
+.mission-parameters > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--lime); }
+.parameter-intro { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 10px 0; }
+.mission-parameter-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(155px,1fr)); gap: 10px; margin: 12px 0; }
+.mission-parameter-grid label { display: flex; flex-direction: column; gap: 5px; color: #c3cebf; font-size: 10px; }
+.mission-parameter-grid input { width: 100%; min-width: 0; padding: 9px; border: 1px solid #445044; border-radius: 5px; background: #222b23; color: #f0f5ed; font: 12px monospace; }
+.mission-parameter-grid input:focus { outline: 2px solid var(--lime); outline-offset: 1px; }
+.mission-parameter-grid input:invalid { border-color: #e99a74; }
+.parameter-error { color: #ffb69b; font-size: 11px; margin: 8px 0; }
+.parameter-reset { margin-top: 3px; }
