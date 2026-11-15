@@ -1,5 +1,9 @@
 const form = document.querySelector("#route");
 const result = document.querySelector("#result");
+const geologyPanel = document.createElement("div");
+geologyPanel.className = "geology-route-panel";
+result.after(geologyPanel);
+geologyPanel.hidden = true;
 const canvas = document.querySelector("canvas");
 const context = canvas.getContext("2d");
 const theme = getComputedStyle(document.documentElement);
@@ -591,6 +595,7 @@ canvas.onclick = (event) => {
   }
   choosingStart = !choosingStart;
   path = [];
+  geologyPanel.hidden = true;
   result.textContent = choosingStart
     ? "Ready to find a route."
     : "Choose the destination.";
@@ -604,11 +609,13 @@ function clearDemRoute() {
   submit.textContent = "Find route";
   resetDem.disabled = true;
   path = [];
+  geologyPanel.hidden = true;
   draw();
 }
 
 resetDem.onclick = () => {
   clearDemRoute();
+  geologyPanel.hidden = true;
   result.textContent = "Ready to find a route.";
 };
 
@@ -679,6 +686,7 @@ form.onsubmit = async (event) => {
     submit.textContent = `Finding route… ~${estimated}%`;
   }, 200);
   result.textContent = "Calculating route…";
+  geologyPanel.hidden = true;
   try {
     const route = await request("/api/route", {
       method: "POST",
@@ -698,6 +706,88 @@ form.onsubmit = async (event) => {
     path = route.path;
     draw();
     result.textContent = `${route.distanceM} m distance · ${route.ascentM} m ascent · ${route.maxSlopeDeg}° maximum slope`;
+    if (route.geology?.units) {
+      const geology = route.geology;
+
+      const formations = geology.units.map(
+        (unit) =>
+          `${unit.name} (${unit.symbol}): ${unit.distanceM} m (${unit.percentage}%)`,
+      );
+
+      if (route.geology?.units) {
+        geologyPanel.replaceChildren();
+
+        const heading = document.createElement("h3");
+        heading.textContent = "Geological Route Intelligence";
+
+        geologyPanel.append(heading);
+        for (const unit of route.geology.units) {
+          const formation = document.createElement("div");
+          formation.className = "geology-formation";
+
+          const details = document.createElement("div");
+          details.className = "geology-formation-details";
+
+          const name = document.createElement("span");
+          name.className = "geology-formation-name";
+          name.textContent = `${unit.name} (${unit.symbol})`;
+
+          const distance = document.createElement("span");
+          distance.className = "geology-formation-distance";
+          distance.textContent = `${unit.distanceM.toFixed(1)} m`;
+
+          const percentage = document.createElement("span");
+          percentage.className = "geology-formation-percentage";
+          percentage.textContent = `${unit.percentage.toFixed(1)}%`;
+
+          details.append(name, distance);
+          formation.append(details, percentage);
+          geologyPanel.append(formation);
+        }
+        const coverage = document.createElement("p");
+        coverage.textContent = `Mapped geological coverage: ${route.geology.mappedPercentage.toFixed(1)}%`;
+
+        const coverageBar = document.createElement("div");
+        coverageBar.className = "geology-coverage-bar";
+
+        const mappedFill = document.createElement("div");
+        mappedFill.className = "geology-coverage-fill";
+
+        mappedFill.style.width = `${route.geology.mappedPercentage}%`;
+
+        coverageBar.append(mappedFill);
+        geologyPanel.append(coverage, coverageBar);
+        const coverageLabels = document.createElement("div");
+        coverageLabels.className = "geology-coverage-labels";
+
+        const mappedLabel = document.createElement("span");
+        mappedLabel.textContent = `Mapped ${route.geology.mappedPercentage.toFixed(1)}%`;
+
+        const unmappedLabel = document.createElement("span");
+        unmappedLabel.textContent = `Unmapped ${(100 - route.geology.mappedPercentage).toFixed(1)}%`;
+
+        coverageLabels.append(mappedLabel, unmappedLabel);
+        geologyPanel.append(coverageLabels);
+        const unmapped = document.createElement("p");
+
+        unmapped.textContent = `Unmapped geological distance: ${route.geology.unmappedDistanceM.toFixed(1)} m`;
+
+        const transitions = document.createElement("p");
+        transitions.textContent = `Geological transitions: ${route.geology.transitions.length}`;
+
+        geologyPanel.append(unmapped, transitions);
+        geologyPanel.hidden = false;
+      }
+    }
+    if (route.geology.units.length === 0) {
+      const note = document.createElement("p");
+      note.textContent =
+        "No geological classification is available along this route. " +
+        "This does not indicate unsafe terrain.";
+
+      geologyPanel.append(note);
+    }
+    console.log("ARES geological analysis:", route.geology);
     await new Promise((resolve) => setTimeout(resolve, 450));
   } catch (error) {
     if (demRequest === controller) result.textContent = error.message;

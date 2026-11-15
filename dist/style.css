@@ -1364,3 +1364,96 @@ body:has(.map-expanded) {
 #map .elevation-legend {
   top: 58px;
 }
+/* ARES — Geological Route Intelligence */
+
+.geology-route-panel {
+  margin-top: 16px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #edf0e8;
+}
+
+.geology-route-panel h3 {
+  margin: 0 0 16px;
+  color: var(--lime);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.geology-route-panel p {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Preserve JavaScript-controlled visibility */
+.geology-route-panel[hidden] {
+  display: none;
+}
+.geology-coverage-bar {
+  width: 100%;
+  height: 12px;
+  background: #505a50;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+.geology-coverage-fill {
+  height: 100%;
+  background: var(--lime);
+  border-radius: inherit;
+}
+.geology-coverage-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.geology-coverage-labels span:first-child {
+  color: var(--lime);
+}
+
+.geology-coverage-labels span:last-child {
+  color: var(--muted);
+}
+.geology-formation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.geology-formation-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.geology-formation-name {
+  color: #edf0e8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.geology-formation-distance {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.geology-formation-percentage {
+  color: var(--lime);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
