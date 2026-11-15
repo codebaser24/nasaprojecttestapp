@@ -244,3 +244,18 @@ dialog .data-inventory .inventory-grid { grid-template-columns: 1fr 1fr; gap: 14
 .file-guide code { padding: 1px 5px; border-radius: 3px; background: #232a24; font-size: 11.5px; color: #e2e9d8; overflow-wrap: anywhere; }
 .file-guide a { color: var(--lime); }
 .file-guide p { margin: 4px 0 0; }
+.along-route:empty { display: none; }
+.along-route { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #171c18; font-size: 11px; color: #c3cdb9; }
+.along-route-title { display: grid; gap: 4px; margin-bottom: 8px; }
+.along-route-title small { color: var(--muted); line-height: 1.45; }
+.along-layer { padding: 8px 0; border-top: 1px solid #262c27; }
+.along-layer > b { display: block; margin-bottom: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.along-layer p { margin: 0; line-height: 1.5; }
+.along-layer small { color: var(--muted); }
+.along-bar { display: flex; height: 8px; margin-bottom: 6px; overflow: hidden; border-radius: 3px; background: #2a312b; }
+.along-bar i { display: block; height: 100%; }
+.along-layer ul { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 3px; }
+.along-layer li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 6px; align-items: start; line-height: 1.4; }
+.along-layer li > i { width: 10px; height: 10px; margin-top: 2px; border-radius: 2px; }
+.along-layer li b { font-weight: 500; color: #e2e9d8; white-space: nowrap; }
+#demAlongRoute { max-width: 900px; }

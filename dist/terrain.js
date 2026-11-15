@@ -137,6 +137,67 @@ function legendHtml(ids) {
   }).join("");
 }
 
+// ------------------------------------------------ what the route crosses in each loaded layer
+// After Gihan Kesara's route geology analysis (kesara branch), extended to every loaded layer.
+
+function distanceText(metres) {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`;
+}
+
+// Adds up the per-leg results of a multi-leg mission into one result per layer.
+function combineAlongRoute(legs) {
+  const combined = new Map();
+  for (const leg of legs) {
+    for (const entry of leg.alongRoute || []) {
+      const total = combined.get(entry.layer) || {...entry, classes: [], noDataM: 0, boundaries: 0, coveredM: 0,
+        minimum: null, maximum: null, weightedSum: 0};
+      total.noDataM += entry.noDataM;
+      if (entry.type === "classes") {
+        total.boundaries += entry.boundaries;
+        for (const item of entry.classes) {
+          const existing = total.classes.find(other => other.name === item.name);
+          if (existing) existing.distanceM += item.distanceM;
+          else total.classes.push({...item});
+        }
+      } else if (entry.minimum !== null) {
+        total.coveredM += entry.coveredM;
+        total.weightedSum += entry.mean * entry.coveredM;
+        total.minimum = total.minimum === null ? entry.minimum : Math.min(total.minimum, entry.minimum);
+        total.maximum = total.maximum === null ? entry.maximum : Math.max(total.maximum, entry.maximum);
+      }
+      combined.set(entry.layer, total);
+    }
+  }
+  return [...combined.values()].map(total => {
+    if (total.type === "classes") total.classes.sort((a, b) => b.distanceM - a.distanceM);
+    else total.mean = total.coveredM ? total.weightedSum / total.coveredM : null;
+    return total;
+  });
+}
+
+function alongRouteHtml(entries) {
+  if (!entries?.length) return "";
+  const blocks = entries.map(entry => {
+    const title = `${KIND_LABELS[entry.kind] || entry.kind} · ${escapeText(entry.file)}`;
+    if (entry.type === "classes") {
+      const total = entry.classes.reduce((sum, item) => sum + item.distanceM, 0) + entry.noDataM;
+      const share = metres => total ? (100 * metres / total).toFixed(0) : 0;
+      const bar = entry.classes.map(item => `<i style="width:${share(item.distanceM)}%;background:${item.colour || "#5d675b"}" title="${escapeText(item.name)}"></i>`).join("");
+      const rows = entry.classes.slice(0, 6).map(item => `<li><i style="background:${item.colour || "#5d675b"}"></i><span>${escapeText(item.name)}${item.hidden ? " <small>(not drawn on the map)</small>" : ""}</span><b>${distanceText(item.distanceM)} · ${share(item.distanceM)}%</b></li>`).join("");
+      const more = entry.classes.length > 6 ? `<li class="muted">+ ${entry.classes.length - 6} more</li>` : "";
+      const gaps = entry.noDataM ? `<li class="muted"><i></i><span>No data in this file</span><b>${distanceText(entry.noDataM)} · ${share(entry.noDataM)}%</b></li>` : "";
+      return `<div class="along-layer"><b>${title}</b><div class="along-bar">${bar}</div><ul>${rows}${more}${gaps}</ul>
+        <small>${entry.boundaries} boundar${entry.boundaries === 1 ? "y" : "ies"} crossed</small></div>`;
+    }
+    const units = entry.units ? ` ${escapeText(entry.units)}` : "";
+    const values = entry.minimum === null ? "No data along this route"
+      : `${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}${units}, average ${formatValue(entry.mean)}${units}${entry.units ? "" : " (units not stated in the file)"}`;
+    const gaps = entry.noDataM ? ` · no data for ${distanceText(entry.noDataM)}` : "";
+    return `<div class="along-layer"><b>${title}</b><p>${values}${gaps}</p></div>`;
+  });
+  return `<div class="along-route-title"><span class="eyebrow">ALONG THIS ROUTE</span><small>From the loaded files at every route cell. Shown only; not used to choose the route.</small></div>${blocks.join("")}`;
+}
+
 // The elevation colour legend is shown only while elevation colours are switched on.
 function baseLegendIds(active = ["elevation"]) {
   if (grid?.baseLayer === "elevation") return active.includes("elevation") ? ["elevation-base"] : [];
@@ -326,8 +387,10 @@ function refreshMissionRouteDisplay() {
     routeDisplayIds.forEach((id, index) => {
       document.getElementById(id).textContent = calculatedDisplay.fields[index];
     });
+    document.getElementById("missionAlongRoute").innerHTML = calculatedDisplay.along || "";
     return;
   }
+  document.getElementById("missionAlongRoute").innerHTML = "";
   missionRouteRequest?.abort();
   missionRouteRequest = null;
   missionDemSummary = null;
@@ -429,10 +492,13 @@ async function routeMissionOnDem() {
   resetMission.disabled = false;
   calculateMission.textContent = "Calculating route… 0%";
   status.textContent = "Checking every leg, including the return to habitat.";
+  const missionAlong = document.getElementById("missionAlongRoute");
+  missionAlong.innerHTML = "";
   function rememberDisplay() {
     calculatedDisplay = {
       path: routeLine.getAttribute("d"),
-      fields: routeDisplayIds.map(id => document.getElementById(id).textContent)
+      fields: routeDisplayIds.map(id => document.getElementById(id).textContent),
+      along: missionAlong.innerHTML
     };
   }
   rememberDisplay();
@@ -473,6 +539,8 @@ async function routeMissionOnDem() {
     slope.innerHTML = `${Math.max(...legs.map(leg => leg.maxSlopeDeg)).toFixed(1)} <small>°</small>`;
     title.textContent = "DEM route calculated";
     status.textContent = `${legs.length} legs including return. ${dataUsageText(legs[0].dataUsed)}`;
+    missionDemSummary.alongRoute = combineAlongRoute(legs);
+    missionAlong.innerHTML = alongRouteHtml(missionDemSummary.alongRoute);
     rememberDisplay();
     await new Promise(resolve => setTimeout(resolve, 450));
   } catch (error) {
@@ -628,7 +696,13 @@ canvas.onclick = event => {
   draw();
 };
 
+const demAlongRoute = document.createElement("div");
+demAlongRoute.className = "along-route";
+demAlongRoute.id = "demAlongRoute";
+result.after(demAlongRoute);
+
 function clearDemRoute() {
+  demAlongRoute.innerHTML = "";
   demRequest?.abort();
   demRequest = undefined;
   submit.disabled = !grid;
@@ -687,6 +761,7 @@ form.onsubmit = async event => {
   start = nextStart;
   goal = nextGoal;
   path = [];
+  demAlongRoute.innerHTML = "";
   draw();
   submit.disabled = true;
   resetDem.disabled = false;
@@ -713,6 +788,7 @@ form.onsubmit = async event => {
     path = route.path;
     draw();
     result.textContent = `${route.distanceM} m distance · ${route.ascentM} m ascent · ${route.maxSlopeDeg}° maximum slope. ${dataUsageText(route.dataUsed)}`;
+    demAlongRoute.innerHTML = alongRouteHtml(route.alongRoute);
     await new Promise(resolve => setTimeout(resolve, 450));
   } catch (error) {
     if (demRequest === controller) result.textContent = error.message;

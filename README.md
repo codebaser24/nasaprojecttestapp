@@ -2,7 +2,7 @@
 
 A Marswalk planning tool for the NASA Space Apps 2026 challenge "Interplanetary Survival Guide: Martian Map". It layers elevation, thermal, mineral and geology data for a location on Mars, plans slope-limited walking routes over the elevation, and shows what each data layer records at every planned stop. Nothing on the map is invented: anything the loaded data cannot support is marked as not calculated.
 
-Features: a planned mission on Jezero crater's western rim, a **Data files** tab for loading any GeoTIFFs, an alignment preview, map layers with legends, editable waypoints, three slope-limited route strategies, 2D and 3D map exports with an elevation profile, and a responsive layout for desktop and tablet.
+Features: a planned mission on Jezero crater's western rim, a **Data files** tab for loading any GeoTIFFs, an alignment preview, map layers with legends, editable waypoints, three slope-limited route strategies, a breakdown of what each route crosses in every loaded layer (after Gihan Kesara's route geology analysis), 2D and 3D map exports with an elevation profile, and a responsive layout for desktop and tablet.
 
 ## Run it
 
@@ -87,7 +87,7 @@ The hillshading, three-level hazards and interpolated contours are adapted from 
   - `POST /api/files/upload` adds a file to `data/`, with its name in the `X-File-Name` header.
   - `POST /api/alignment` with `{"files": [...]}` previews how a selection lines up.
   - `POST /api/dataset` with `{"files": [...]}` loads a selection; `GET /api/dataset` returns the loaded data and build progress.
-  - `POST /api/route` with `{"start":[x,y],"goal":[x,y],"profile":"balanced"}` returns a route, the elevation of every step (`elevationsM`) and `dataUsed`.
+  - `POST /api/route` with `{"start":[x,y],"goal":[x,y],"profile":"balanced"}` returns a route, the elevation of every step (`elevationsM`), `dataUsed`, and `alongRoute`: what every other loaded layer shows along the route (distance on each class, boundaries crossed, or the lowest, average and highest value). `alongRoute` is for reporting only and never affects the route.
   - `GET /api/region?x0=&y0=&x1=&y1=&size=` returns the corner coordinates of a grid window and, when elevation is loaded, its elevation averaged into at most `size` samples per side.
 - A* searches eight neighbouring cells using distance plus a slope penalty, rejects steps above the selected slope limit, and avoids missing elevation cells.
 - Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`, `dist/export.js`. No build step.

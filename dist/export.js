@@ -36,6 +36,21 @@
     return text + "…";
   }
 
+  // One line per loaded layer: what the calculated route crosses in it.
+  function alongSummary() {
+    return (missionDemSummary?.alongRoute || []).map(entry => {
+      const label = KIND_LABELS[entry.kind] || entry.kind;
+      if (entry.type === "classes") {
+        const total = entry.classes.reduce((sum, item) => sum + item.distanceM, 0) + entry.noDataM;
+        const top = entry.classes.filter(item => !item.hidden).slice(0, 3)
+          .map(item => `${item.name.split(" · ")[0]} ${distanceText(item.distanceM)} (${Math.round(100 * item.distanceM / total)}%)`);
+        return `${label}: ${top.length ? top.join(", ") : "none detected"}`;
+      }
+      return entry.minimum === null ? `${label}: no data`
+        : `${label}: ${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}, average ${formatValue(entry.mean)}${entry.units ? ` ${entry.units}` : ""}`;
+    });
+  }
+
   // Draws text over as many lines as it needs; returns the y of the line after it.
   function wrapText(ctx, text, x, y, width, lineHeight) {
     let line = "";
@@ -258,6 +273,17 @@
         ctx.fillText(v1, px, y);
         ctx.fillText(v2, px + width / 2 + 6, y);
         y += 28;
+      }
+      const along = alongSummary();
+      if (along.length) {
+        ctx.fillStyle = MUTED;
+        ctx.font = "bold 10px monospace";
+        ctx.fillText("ALONG THE ROUTE (SHOWN ONLY, NOT USED FOR ROUTING)", px, y);
+        y += 16;
+        ctx.fillStyle = "#cfd8c8";
+        ctx.font = "11.5px system-ui, sans-serif";
+        for (const line of along) y = wrapText(ctx, line, px, y, width, 15);
+        y += 6;
       }
     } else {
       ctx.fillStyle = "#ffb4a8";

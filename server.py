@@ -157,6 +157,64 @@ def reference_georeferencing(key):
         return reference.transform, reference.crs, dataset.lonlat_crs(reference.crs)
 
 
+@lru_cache(maxsize=8)
+def layer_band(file_id, band, version):
+    """One band of a source file in memory, with nodata as NaN and scale/offset applied."""
+    with rasterio.open(dataset.resolve(file_id)) as source:
+        values = source.read(band, masked=True).astype(np.float32).filled(np.nan)
+        scale, offset = source.scales[band - 1], source.offsets[band - 1]
+        return values * scale + offset if (scale, offset) != (1, 0) else values, source.transform, source.crs
+
+
+def along_route(meta, path):
+    """What every loaded layer shows along a route, from the source files at each route cell.
+
+    Each step's length is split equally between its two end cells, so a step that crosses a
+    boundary counts half on each side. Adapted from Gihan Kesara's route geology analysis
+    (kesara branch) and extended to every loaded layer. Not used to choose the route.
+    """
+    transform, crs, _ = reference_georeferencing(meta["key"])
+    cells = np.array(path, dtype=np.float64)
+    xs, ys = transform * (cells[:, 0] + 0.5, cells[:, 1] + 0.5)
+    steps = np.hypot(np.diff(cells[:, 0]) * meta["dx"], np.diff(cells[:, 1]) * meta["dy"])
+    weights = np.zeros(len(cells))
+    weights[:-1] += steps / 2
+    weights[1:] += steps / 2
+    results = []
+    for layer in meta["layers"]:
+        if len(layer["bands"]) != 1:
+            continue  # Colour imagery has no single value to report.
+        path_to_file = dataset.resolve(layer["fileId"])
+        values, source_transform, source_crs = layer_band(layer["fileId"], layer["bands"][0], path_to_file.stat().st_mtime_ns)
+        sx, sy = (xs, ys) if source_crs == crs else map(np.asarray, warp_transform(crs, source_crs, list(xs), list(ys)))
+        columns, rows = ~source_transform * (sx, sy)
+        columns, rows = np.floor(columns).astype(int), np.floor(rows).astype(int)
+        inside = (rows >= 0) & (rows < values.shape[0]) & (columns >= 0) & (columns < values.shape[1])
+        sampled = np.full(len(cells), np.nan, np.float32)
+        sampled[inside] = values[rows[inside], columns[inside]]
+        valid = np.isfinite(sampled)
+        entry = dict(layer=layer["id"], kind=layer["kind"], file=layer["file"], noDataM=round(float(weights[~valid].sum())),
+                     coveragePercent=round(100 * float(weights[valid].sum()) / max(1e-9, float(weights.sum())), 1))
+        legend = layer.get("legend") or {}
+        if legend.get("type") == "classes":
+            names = {item["value"]: item for item in legend["items"]}
+            totals = {}
+            for value, weight in zip(sampled[valid].astype(int), weights[valid]):
+                totals[value] = totals.get(value, 0.0) + weight
+            entry.update(type="classes", boundaries=int(np.count_nonzero(np.diff(np.where(valid, sampled, -1)) != 0)),
+                         classes=[dict(name=names.get(value, {}).get("name", f"Class {value}"),
+                                       colour=names.get(value, {}).get("colour"), hidden=names.get(value, {}).get("hidden", False),
+                                       distanceM=round(distance)) for value, distance in sorted(totals.items(), key=lambda pair: -pair[1])])
+        elif valid.any():
+            entry.update(type="range", units=layer.get("units"), minimum=float(sampled[valid].min()),
+                         maximum=float(sampled[valid].max()), coveredM=float(weights[valid].sum()),
+                         mean=float((sampled[valid] * weights[valid]).sum() / max(1e-9, weights[valid].sum())))
+        else:
+            entry.update(type="range", units=layer.get("units"), minimum=None, maximum=None, mean=None, coveredM=0.0)
+        results.append(entry)
+    return results
+
+
 def region(meta, x0, y0, x1, y1, size):
     """Describe a window of the reference grid: corner coordinates and, when available,
     elevation averaged into at most `size` samples along the longer side."""
@@ -319,6 +377,10 @@ class Handler(SimpleHTTPRequestHandler):
         data_used = routing_source(meta)
         route = find_route(elevation_grid(meta["key"]), tuple(start), tuple(goal), profile,
                            extended=payload.get("extended") is True)
+        try:
+            route["alongRoute"] = along_route(meta, route["path"])
+        except Exception as error:  # Reporting layers must never break routing.
+            route["alongRoute"], route["alongRouteError"] = [], str(error)
         self.respond(200, {**route, "dataUsed": data_used})
 
     def upload(self):
