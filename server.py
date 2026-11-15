@@ -24,8 +24,8 @@ MAX_UPLOAD_BYTES = 4 * 1024 ** 3
 # Loaded automatically when nothing has been loaded yet. The full Jezero DEM is used when it has been
 # downloaded; otherwise the 14 km mission-area window included in the repository is used.
 FULL_DEM, MISSION_DEM = "M20_JezeroCrater_CTXDEM_20m.tif", "included-data/Jezero_WesternRim_Elevation_CTX_20m.tif"
-DEFAULT_LAYERS = ["included-data/Jezero_ThermalInertia_100m.tif", "included-data/Jezero_WesternRim_Minerals_CRISM.tif",
-                  "included-data/Jezero_Geology_USGS_SIM3464.tif"]
+DEFAULT_LAYERS = ["included-data/Jezero_WesternRim_Optical_CTX_10m.tif", "included-data/Jezero_ThermalInertia_100m.tif",
+                  "included-data/Jezero_WesternRim_Minerals_CRISM.tif", "included-data/Jezero_Geology_USGS_SIM3464.tif"]
 
 
 def default_files():
@@ -182,8 +182,8 @@ def along_route(meta, path):
     weights[1:] += steps / 2
     results = []
     for layer in meta["layers"]:
-        if len(layer["bands"]) != 1:
-            continue  # Colour imagery has no single value to report.
+        if len(layer["bands"]) != 1 or layer["kind"] == "imagery":
+            continue  # Image brightness along a route is not a meaningful reading.
         path_to_file = dataset.resolve(layer["fileId"])
         values, source_transform, source_crs = layer_band(layer["fileId"], layer["bands"][0], path_to_file.stat().st_mtime_ns)
         sx, sy = (xs, ys) if source_crs == crs else map(np.asarray, warp_transform(crs, source_crs, list(xs), list(ys)))
@@ -213,6 +213,160 @@ def along_route(meta, path):
             entry.update(type="range", units=layer.get("units"), minimum=None, maximum=None, mean=None, coveredM=0.0)
         results.append(entry)
     return results
+
+
+# ----------------------------------------------------- safety analyses from the camp
+# Planning assumptions, printed with every result.
+MARS_RADIUS_M = 3396190.0
+ANTENNA_HEIGHT_M, PERSON_HEIGHT_M = 3.0, 2.0
+VIEWSHED_RADIUS_M, WALKBACK_RADIUS_M = 15000, 10000
+WALKBACK_BANDS = ((2000, "Up to 2 km", (120, 205, 130, 150)), (5000, "2–5 km", (225, 212, 96, 155)),
+                  (10000, "5–10 km", (240, 150, 64, 165)), (float("inf"), "More than 10 km", (220, 72, 72, 175)))
+NO_WAY_BACK = ("No walking route back within the slope limit", (150, 70, 200, 175))
+IN_VIEW, OUT_OF_VIEW = ("In view of the camp", (110, 200, 255, 120)), ("Out of view of the camp", (25, 20, 40, 115))
+
+
+def analysis_window(meta, x, y, radius_m):
+    cells = int(radius_m / min(meta["dx"], meta["dy"]))
+    x0, x1 = max(0, x - cells), min(meta["width"], x + cells + 1)
+    y0, y1 = max(0, y - cells), min(meta["height"], y + cells + 1)
+    heights = np.array(np.memmap(dataset.BUILDS / meta["key"] / "elevation.f32", dtype="<f4", mode="r",
+                                 shape=(meta["height"], meta["width"]))[y0:y1, x0:x1])
+    return heights, (x0, y0, x1, y1)
+
+
+def viewshed(heights, cx, cy, dx, dy):
+    """1 where a person can see an antenna on the camp (and so be in radio line of sight), 0 where
+    terrain blocks it, -1 where unknown. Rays run from the camp to every cell on the edge of the
+    window; a cell is in view when its top is not below the steepest terrain angle nearer the camp."""
+    rows, columns = heights.shape
+    radius = max(cx, columns - 1 - cx, cy, rows - 1 - cy)
+    eye = float(heights[cy, cx]) + ANTENNA_HEIGHT_M
+    edge = [(cx + i, cy - radius) for i in range(-radius, radius + 1)] + [(cx + i, cy + radius) for i in range(-radius, radius + 1)]
+    edge += [(cx - radius, cy + j) for j in range(-radius + 1, radius)] + [(cx + radius, cy + j) for j in range(-radius + 1, radius)]
+    edge = np.array(edge, dtype=np.float64)
+    steps = np.arange(1, radius + 1) / radius
+    seen, visible = np.zeros(heights.shape, bool), np.zeros(heights.shape, bool)
+    for chunk in np.array_split(edge, max(1, len(edge) // 1000)):
+        c = np.rint(cx + (chunk[:, :1] - cx) * steps).astype(int)
+        r = np.rint(cy + (chunk[:, 1:] - cy) * steps).astype(int)
+        inside = (c >= 0) & (c < columns) & (r >= 0) & (r < rows)
+        z = np.full(c.shape, np.nan)
+        z[inside] = heights[r[inside], c[inside]]
+        distance = np.hypot((c - cx) * dx, (r - cy) * dy)
+        distance[distance == 0] = np.nan
+        drop = distance ** 2 / (2 * MARS_RADIUS_M)  # the surface curves away from a straight line of sight
+        terrain = (z - drop - eye) / distance
+        target = (z + PERSON_HEIGHT_M - drop - eye) / distance
+        blocking = np.maximum.accumulate(np.where(np.isfinite(terrain), terrain, -np.inf), axis=1)
+        blocking = np.hstack([np.full((len(chunk), 1), -np.inf), blocking[:, :-1]])
+        known = inside & np.isfinite(target)
+        seen[r[known], c[known]] = True
+        hit = known & (target >= blocking)
+        visible[r[hit], c[hit]] = True
+    result = np.where(visible, 1, np.where(seen, 0, -1)).astype(np.int8)
+    result[cy, cx] = 1
+    return result
+
+
+def walkback(heights, cx, cy, dx, dy, limit_deg):
+    """Shortest walking distance (m, horizontal) from every cell back to the camp without a step
+    steeper than the slope limit, over the same eight-neighbour grid the route search uses."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import dijkstra
+    rows, columns = heights.shape
+    index = np.arange(rows * columns, dtype=np.int32).reshape(rows, columns)
+    valid = np.isfinite(heights)
+    starts, ends, lengths = [], [], []
+    for oy, ox in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        a = np.s_[max(0, -oy):rows - max(0, oy), max(0, -ox):columns - max(0, ox)]
+        b = np.s_[max(0, oy):rows - max(0, -oy), max(0, ox):columns - max(0, -ox)]
+        run = float(np.hypot(ox * dx, oy * dy))
+        with np.errstate(invalid="ignore"):
+            allowed = valid[a] & valid[b] & (np.abs(heights[a] - heights[b]) / run <= np.tan(np.radians(limit_deg)))
+        starts.append(index[a][allowed])
+        ends.append(index[b][allowed])
+        lengths.append(np.full(int(allowed.sum()), run))
+    graph = coo_matrix((np.concatenate(lengths), (np.concatenate(starts), np.concatenate(ends))),
+                       shape=(rows * columns, rows * columns)).tocsr()
+    distance = dijkstra(graph, directed=False, indices=cy * columns + cx).reshape(rows, columns)
+    return np.where(valid, distance, np.nan)
+
+
+@lru_cache(maxsize=12)
+def camp_analysis(key, kind, x, y, profile):
+    """Line of sight or walk-back distance from the camp at grid cell (x, y), drawn as an overlay."""
+    meta = json.loads((dataset.BUILDS / key / "meta.json").read_text())
+    if not meta["routing"]["available"]:
+        raise InsufficientData("These analyses need elevation that meets the routing requirements.")
+    radius = VIEWSHED_RADIUS_M if kind == "viewshed" else WALKBACK_RADIUS_M
+    heights, (x0, y0, x1, y1) = analysis_window(meta, x, y, radius)
+    cx, cy = x - x0, y - y0
+    if not (0 <= cx < heights.shape[1] and 0 <= cy < heights.shape[0]) or not np.isfinite(heights[cy, cx]):
+        raise ValueError("The camp is not on valid elevation data.")
+    rgba = np.zeros((meta["height"], meta["width"], 4), np.uint8)
+    window = rgba[y0:y1, x0:x1]
+    limit = PROFILES[profile][0]
+    if kind == "viewshed":
+        values = viewshed(heights, cx, cy, meta["dx"], meta["dy"])
+        window[values == 1], window[values == 0] = IN_VIEW[1], OUT_OF_VIEW[1]
+        share = 100 * float((values == 1).sum()) / max(1, int((values >= 0).sum()))
+        legend = dict(type="classes", items=[dict(name=IN_VIEW[0], colour=dataset.hex_colour(IN_VIEW[1]), value=1),
+                                             dict(name=OUT_OF_VIEW[0], colour=dataset.hex_colour(OUT_OF_VIEW[1]), value=0)],
+                      note=(f"Straight line from an antenna {ANTENNA_HEIGHT_M:g} m above the camp to a person {PERSON_HEIGHT_M:g} m tall, "
+                            f"blocked by terrain in the elevation model; includes the curvature of Mars. Within "
+                            f"{VIEWSHED_RADIUS_M // 1000} km of the camp. {share:.0f}% of that area is in view. "
+                            "Radio range, dust and buildings are not modelled."))
+    else:
+        values = walkback(heights, cx, cy, meta["dx"], meta["dy"], limit)
+        reachable = np.isfinite(values)
+        items, lower = [], 0
+        for upper, name, colour in WALKBACK_BANDS:
+            window[reachable & (values > lower) & (values <= upper)] = colour
+            items.append(dict(name=name, colour=dataset.hex_colour(colour)))
+            lower = upper
+        window[reachable & (values == 0)] = WALKBACK_BANDS[0][2]
+        window[np.isfinite(heights) & ~reachable] = NO_WAY_BACK[1]
+        items.append(dict(name=NO_WAY_BACK[0], colour=dataset.hex_colour(NO_WAY_BACK[1])))
+        legend = dict(type="classes", items=items,
+                      note=(f"Shortest walking distance back to the camp without crossing a slope steeper than {limit}° "
+                            f"(the {profile} route limit), within {WALKBACK_RADIUS_M // 1000} km of the camp."))
+    name = f"analysis-{kind}-{x}-{y}-{profile if kind == 'walkback' else 'all'}.png"
+    dataset.write_png(dataset.BUILDS / key / name, rgba, 6)
+    return dict(image=name, legend=legend, window=[x0, y0, x1, y1], values=values)
+
+
+def route_safety(meta, path, camp, profile):
+    """Line of sight and walk-back distance along a route, from the camp's analyses."""
+    cells = np.array(path)
+    steps = np.hypot(np.diff(cells[:, 0]) * meta["dx"], np.diff(cells[:, 1]) * meta["dy"])
+    weights = np.zeros(len(cells))
+    weights[:-1] += steps / 2
+    weights[1:] += steps / 2
+    entries = []
+    for kind in ("viewshed", "walkback"):
+        result = camp_analysis(meta["key"], kind, camp[0], camp[1], profile)
+        x0, y0, x1, y1 = result["window"]
+        inside = (cells[:, 0] >= x0) & (cells[:, 0] < x1) & (cells[:, 1] >= y0) & (cells[:, 1] < y1)
+        sampled = np.full(len(cells), np.nan)
+        sampled[inside] = result["values"][cells[inside, 1] - y0, cells[inside, 0] - x0]
+        if kind == "viewshed":
+            sampled[sampled < 0] = np.nan
+            valid = np.isfinite(sampled)
+            classes = [dict(name=name, colour=dataset.hex_colour(colour), distanceM=round(float(weights[valid & (sampled == value)].sum())))
+                       for value, (name, colour) in ((1, IN_VIEW), (0, OUT_OF_VIEW))]
+            entries.append(dict(layer="viewshed", kind="lineOfSight", file="calculated from elevation", type="classes",
+                                classes=[item for item in classes if item["distanceM"]], noDataM=round(float(weights[~valid].sum())),
+                                boundaries=int(np.count_nonzero(np.diff(np.where(valid, sampled, -1)) != 0))))
+        else:
+            valid = np.isfinite(sampled)
+            entries.append(dict(layer="walkback", kind="walkback", file=f"calculated from elevation, {profile} slope limit",
+                                type="range", units="m", noDataM=round(float(weights[~valid].sum())),
+                                minimum=float(sampled[valid].min()) if valid.any() else None,
+                                maximum=float(sampled[valid].max()) if valid.any() else None,
+                                mean=float((sampled[valid] * weights[valid]).sum() / max(1e-9, weights[valid].sum())) if valid.any() else None,
+                                coveredM=float(weights[valid].sum())))
+    return entries
 
 
 def region(meta, x0, y0, x1, y1, size):
@@ -314,6 +468,19 @@ class Handler(SimpleHTTPRequestHandler):
             with build_lock:
                 status = dict(build_status)
             return self.respond(200, {"meta": current_meta(), "build": status})
+        if path == "/api/analysis":
+            meta = current_meta()
+            query = {name: values[0] for name, values in parse_qs(urlsplit(self.path).query).items()}
+            try:
+                kind, profile = query["type"], query.get("profile", "balanced")
+                if kind not in ("viewshed", "walkback") or profile not in PROFILES or not meta:
+                    raise ValueError("Use type=viewshed or walkback, a valid profile, and load data files first.")
+                result = camp_analysis(meta["key"], kind, int(query["x"]), int(query["y"]), profile)
+                return self.respond(200, {key: result[key] for key in ("image", "legend", "window")})
+            except InsufficientData as error:
+                return self.respond(422, {"error": str(error), "code": "insufficient_data"})
+            except (KeyError, ValueError) as error:
+                return self.respond(400, {"error": f"Invalid analysis request: {error}"})
         if path == "/api/region":
             meta = current_meta()
             if not meta:
@@ -379,8 +546,12 @@ class Handler(SimpleHTTPRequestHandler):
                            extended=payload.get("extended") is True)
         try:
             route["alongRoute"] = along_route(meta, route["path"])
+            camp = payload.get("camp")
+            if isinstance(camp, list) and len(camp) == 2 and all(type(n) is int for n in camp):
+                route["alongRoute"] = route_safety(meta, route["path"], camp, profile) + route["alongRoute"]
         except Exception as error:  # Reporting layers must never break routing.
-            route["alongRoute"], route["alongRouteError"] = [], str(error)
+            route.setdefault("alongRoute", [])
+            route["alongRouteError"] = str(error)
         self.respond(200, {**route, "dataUsed": data_used})
 
     def upload(self):

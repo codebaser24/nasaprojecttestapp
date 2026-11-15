@@ -38,7 +38,7 @@ DATA_DIRS = (INCLUDED, ROOT, UPLOADS)
 BUILDS = ROOT / "builds"
 CURRENT = BUILDS / "current.json"
 MISSION = ROOT / "mission.json"
-BUILD_VERSION = 3
+BUILD_VERSION = 4
 EXTENSIONS = (".tif", ".tiff")
 MAX_LAYERS_PER_FILE = 6
 MAX_CLASSES = 64
@@ -353,8 +353,12 @@ def hex_colour(rgb):
 def ramp_legend(kind, values, units):
     low, high = stretch(values)
     ramp = RAMPS.get(kind, RAMPS["unknown"])
-    return dict(type="ramp", low=low, high=high, units=units, colours=[hex_colour(c) for c in ramp],
-                note="Colours run from the 2nd to the 98th percentile of the values")
+    legend = dict(type="ramp", low=low, high=high, units=units, colours=[hex_colour(c) for c in ramp],
+                  note="Colours run from the 2nd to the 98th percentile of the values")
+    if kind == "imagery":
+        # Image brightness is not a quantity to read off; the legend just shows dark to bright.
+        legend.update(labels=["Darker", "Brighter"], note="Contrast stretched between the 2nd and 98th percentile of brightness")
+    return legend
 
 
 def render_classes(values, src, index, band):
@@ -533,13 +537,17 @@ def steepest_slope(heights, row, col, dx, dy):
     return steepest
 
 
-def read_on_grid(src, index, ref, is_reference):
-    """Return one band on the reference grid, with nodata as NaN and scale/offset applied."""
+def read_on_grid(src, index, ref, is_reference, categorical=None):
+    """Return one band on the reference grid, with nodata as NaN and scale/offset applied.
+
+    Class maps are resampled to the nearest cell so classes are never blended; continuous
+    values (elevation, temperature, image brightness) are interpolated bilinearly.
+    """
     if is_reference:
         values = src.read(index, masked=True).astype(np.float32).filled(np.nan)
     else:
         values = np.full((ref.height, ref.width), np.nan, np.float32)
-        continuous = np.dtype(src.dtypes[index - 1]).kind == "f"
+        continuous = not categorical if categorical is not None else np.dtype(src.dtypes[index - 1]).kind == "f"
         reproject(source=rasterio.band(src, index), destination=values,
                   src_transform=src.transform, src_crs=src.crs, src_nodata=src.nodata,
                   dst_transform=ref.transform, dst_crs=ref.crs, dst_nodata=np.nan,
@@ -598,7 +606,7 @@ def build(identifiers, progress=lambda message, step, total: None):
                         continue
                     action = "Reading" if entry["role"] == "reference" else "Reprojecting"
                     advance(f"{action} band {band['band']} of {entry['name']} onto the reference grid")
-                    values = read_on_grid(src, band["band"], ref, entry["role"] == "reference")
+                    values = read_on_grid(src, band["band"], ref, entry["role"] == "reference", band["categorical"])
                     valid = values[np.isfinite(values)]
                     stats.update(min=float(valid.min()) if valid.size else None,
                                  max=float(valid.max()) if valid.size else None,
@@ -626,15 +634,16 @@ def build(identifiers, progress=lambda message, step, total: None):
                         pixels, legend = render_classes(values, src, band["band"], band)
                     if pixels is None:
                         channels = colour(values, band["kind"])
-                        alpha = np.where(np.isfinite(values), 210, 0).astype(np.uint8)
+                        # Photographs are drawn opaque; data layers slightly see-through. The opacity slider applies to both.
+                        alpha = np.where(np.isfinite(values), 255 if band["kind"] == "imagery" else 210, 0).astype(np.uint8)
                         pixels, legend = np.stack((*channels, alpha), axis=-1), ramp_legend(band["kind"], values, band["units"])
                     write_png(work / f"{layer_id}.png", pixels, 6)
                     layers.append(dict(id=layer_id, kind=band["kind"], file=entry["name"], fileId=entry["id"],
                                        bands=[band["band"]], identifiedBy=band["identifiedBy"], units=band["units"],
                                        image=f"{layer_id}.png", coveragePercent=stats["gridCoveragePercent"],
                                        legend=legend, note=band["note"], source=info["source"]))
-                    # Record what this layer shows at each mission target.
-                    for target in targets:
+                    # Record what this layer shows at each mission target (image brightness is not a useful reading).
+                    for target in targets if band["kind"] != "imagery" else []:
                         col, row = target["cell"]
                         if np.isfinite(values[row, col]):
                             text = describe_value(float(values[row, col]), legend, band["units"])

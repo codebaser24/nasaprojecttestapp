@@ -46,7 +46,7 @@ function draw() {
   context.filter = "none";
   for (const layer of demLayers) {
     const overlay = demOverlays[layer];
-    context.globalAlpha = layer === "contours" || layer === "hazards" ? 1 : overlayOpacity;
+    context.globalAlpha = OPAQUE_OVERLAYS.has(layer) ? 1 : overlayOpacity;
     if (overlay?.complete && overlay.naturalWidth) context.drawImage(overlay, 0, 0);
   }
   context.globalAlpha = 1;
@@ -108,6 +108,7 @@ function legendEntry(id) {
   if (id === "elevation-base") return grid.legends.elevation && {title: "Elevation (base map)", legend: grid.legends.elevation};
   if (id === "hazards") return grid.legends.hazards && {title: "Slope hazards", legend: grid.legends.hazards};
   if (id === "contours") return grid.legends.contours && {title: "Topography contours", legend: grid.legends.contours};
+  if (CAMP_ANALYSES[id]) return grid.legends[id] && {title: CAMP_ANALYSES[id].title, legend: grid.legends[id]};
   const layer = grid.layers.find(entry => entry.id === id);
   return layer?.legend && {title: `${KIND_LABELS[layer.kind]} · ${layer.file}`, legend: layer.legend,
     note: layer.note, source: sourceText(layer.source), units: layer.units};
@@ -118,9 +119,10 @@ function legendHtml(ids) {
     let body = "";
     if (legend.type === "ramp") {
       const units = legend.units ? ` ${escapeText(legend.units)}` : "";
+      const [low, high] = legend.labels || [`${formatValue(legend.low)}${units}`, `${formatValue(legend.high)}${units}`];
       body = `<div class="legend-ramp" style="background:linear-gradient(90deg,${legend.colours.join(",")})"></div>
-        <div class="legend-scale"><span>${formatValue(legend.low)}${units}</span><span>${formatValue(legend.high)}${units}</span></div>
-        ${legend.units ? "" : "<small>Units are not stated in the file.</small>"}`;
+        <div class="legend-scale"><span>${escapeText(low)}</span><span>${escapeText(high)}</span></div>
+        ${legend.units || legend.labels ? "" : "<small>Units are not stated in the file.</small>"}`;
     } else {
       body = `<ul class="legend-classes">${legend.items.map(item => {
         const swatch = legend.type === "lines"
@@ -189,6 +191,11 @@ function alongRouteHtml(entries) {
       return `<div class="along-layer"><b>${title}</b><div class="along-bar">${bar}</div><ul>${rows}${more}${gaps}</ul>
         <small>${entry.boundaries} boundar${entry.boundaries === 1 ? "y" : "ies"} crossed</small></div>`;
     }
+    if (entry.kind === "walkback") {
+      const text = entry.minimum === null ? "Outside the walk-back analysis area"
+        : `Farthest point on this route is ${distanceText(entry.maximum)} from the camp on foot (average ${distanceText(entry.mean)}).`;
+      return `<div class="along-layer"><b>${title}</b><p>${text}${entry.noDataM ? ` No walking route back for ${distanceText(entry.noDataM)} of it.` : ""}</p></div>`;
+    }
     const units = entry.units ? ` ${escapeText(entry.units)}` : "";
     const values = entry.minimum === null ? "No data along this route"
       : `${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}${units}, average ${formatValue(entry.mean)}${units}${entry.units ? "" : " (units not stated in the file)"}`;
@@ -215,6 +222,31 @@ function updateMissionLegend() {
   document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(active), ...active]);
   const missionBase = document.getElementById("missionBase");
   if (missionBase) missionBase.style.filter = grid.baseLayer === "elevation" && !active.includes("elevation") ? "grayscale(1)" : "";
+  refreshMissionAnalyses(active);
+}
+
+// Loads line-of-sight and walk-back overlays for the camp's current position and route profile.
+// Waits briefly so dragging the camp does not start a calculation at every step.
+const analysisTimers = {};
+function refreshMissionAnalyses(active) {
+  for (const kind of Object.keys(CAMP_ANALYSES)) {
+    const group = document.getElementById(kind);
+    if (!group || !active.includes(kind)) continue;
+    const key = `${campCell()}|${kind === "walkback" ? missionProfile() : ""}`;
+    if (group.dataset.key === key) continue;
+    group.dataset.key = key;
+    clearTimeout(analysisTimers[kind]);
+    analysisTimers[kind] = setTimeout(() => loadCampAnalysis(kind, missionProfile())
+      .then(url => {
+        if (group.dataset.key !== key) return;
+        setTerrainImage(group, url);
+        document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(state.layers), ...state.layers.filter(id => availableLayers.has(id))]);
+      })
+      .catch(error => {
+        group.dataset.key = "";
+        notify(`${CAMP_ANALYSES[kind].title}: ${error.message}`);
+      }), 400);
+  }
 }
 
 // Legends sit under the map normally. In fullscreen that space is gone, so the legend moves
@@ -261,7 +293,33 @@ let missionDemSummary = null;
 let calculatedPlan;
 let calculatedDisplay;
 const routeDisplayIds = ["distance", "ascent", "slope", "advisoryTitle", "advisoryText"];
-const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", geology: "Geology", unknown: "Unidentified"};
+const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", geology: "Geology", unknown: "Unidentified",
+  lineOfSight: "Line of sight to the camp", walkback: "Walk-back to the camp"};
+// Safety analyses calculated from elevation for the camp's current position.
+const CAMP_ANALYSES = {
+  viewshed: {label: "◎ Line of sight", title: "Line of sight from the camp",
+    hint: "Where a person can see the camp's antenna (radio line of sight), calculated from elevation"},
+  walkback: {label: "↩ Walk-back", title: "Walk-back distance to the camp",
+    hint: "Shortest walking distance back to the camp within the route's slope limit, calculated from elevation"}
+};
+const OPAQUE_OVERLAYS = new Set(["contours", "hazards", ...Object.keys(CAMP_ANALYSES)]);
+
+// Grid cell of the mission's camp (the first stop), wherever it has been moved to.
+function campCell() {
+  const camp = catalog.find(point => point.id === "hab");
+  return camp && grid ? [Math.floor(camp.x / 1000 * grid.width), Math.floor(camp.y / 700 * grid.height)] : null;
+}
+
+function missionProfile() {
+  return {balanced: "balanced", safe: "low-exposure", science: "shortest"}[state.mode];
+}
+
+async function loadCampAnalysis(kind, profile) {
+  const [x, y] = campCell();
+  const result = await request(`/api/analysis?type=${kind}&x=${x}&y=${y}&profile=${profile}`);
+  grid.legends[kind] = result.legend;
+  return buildUrl(result.image);
+}
 const KIND_ICONS = {elevation: "▲", imagery: "▣", mineral: "◇", thermal: "☀", geology: "▦", unknown: "?"};
 // Kinds that are shown for reference when a loaded file has them.
 const OPTIONAL_KINDS = ["imagery", "mineral", "thermal", "geology"];
@@ -302,6 +360,8 @@ function mapLayers() {
       title: grid.derived.contours ? `Contours every ${derivedText("contours")}, interpolated from elevation` : needsRouting},
     {id: "hazards", label: "△ Hazards", image: "hazards.png", present: grid.derived.hazards, derived: true,
       title: grid.derived.hazards ? `Slopes steeper than ${derivedText("hazards")}, computed from elevation` : needsRouting},
+    ...Object.entries(CAMP_ANALYSES).map(([id, analysis]) => ({id, label: analysis.label, derived: true, analysis: true,
+      present: Boolean(grid.derived.slope && campCell()), title: grid.derived.slope ? analysis.hint : needsRouting})),
     ...grid.layers.map(layer => ({id: layer.id, image: layer.image, present: true,
       label: `${KIND_ICONS[layer.kind]} ${KIND_LABELS[layer.kind]} · ${shortName(layer.file)}`,
       title: `${KIND_LABELS[layer.kind]} from ${layer.file}, band ${layer.bands.join(", ")}. ${SHOWN_ONLY}.`}))
@@ -509,7 +569,7 @@ async function routeMissionOnDem() {
       const leg = await request("/api/route", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full"}),
+      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full", camp: campCell()}),
       signal: controller.signal
     }).catch(error => {
       throw new Error(`${points[index].name} → ${(points[index + 1] || points[0]).name}: ${error.message}`);
@@ -600,6 +660,12 @@ function showMissionTerrain() {
   }
   if (grid.derived.contours) setTerrainImage(document.getElementById("contours"), buildUrl("contours.png"));
   if (grid.derived.hazards) showSlopeHazards();
+  for (const kind of Object.keys(CAMP_ANALYSES)) {
+    const group = document.createElementNS(world.namespaceURI, "g");
+    group.id = kind;
+    group.style.display = "none";
+    document.getElementById("hazards").before(group);
+  }
   const overlays = document.getElementById("overlays");
   overlays.style.opacity = overlayOpacity;
   for (const layer of grid.layers) {
@@ -781,7 +847,7 @@ form.onsubmit = async event => {
       method: "POST",
       signal: controller.signal,
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start, goal, profile, coverage: "full", extended})
+      body: JSON.stringify({start, goal, profile, coverage: "full", extended, camp: campCell()})
     });
     if (demRequest !== controller) return;
     clearInterval(timer);
@@ -875,6 +941,10 @@ document.getElementById("demLayers").addEventListener("click", event => {
   else demLayers.delete(layer);
   button.classList.toggle("active", active);
   button.setAttribute("aria-pressed", String(active));
+  if (CAMP_ANALYSES[layer] && active) {
+    loadDemAnalysis(layer);
+    return;
+  }
   const source = mapLayers().find(entry => entry.id === layer)?.image;
   if (source && !demOverlays[layer]) {
     const image = new Image();
@@ -884,6 +954,37 @@ document.getElementById("demLayers").addEventListener("click", event => {
   }
   draw();
   updateDemLegend();
+});
+
+// Line of sight and walk-back for the camp; walk-back follows the route profile chosen above.
+const demAnalysisKeys = {};
+async function loadDemAnalysis(kind) {
+  const profile = document.getElementById("profile").value;
+  const key = `${campCell()}|${kind === "walkback" ? profile : ""}`;
+  if (demAnalysisKeys[kind] === key && demOverlays[kind]) {
+    draw();
+    updateDemLegend();
+    return;
+  }
+  demAnalysisKeys[kind] = key;
+  result.textContent = `Calculating ${CAMP_ANALYSES[kind].title.toLowerCase()}…`;
+  try {
+    const url = await loadCampAnalysis(kind, profile);
+    if (demAnalysisKeys[kind] !== key) return;
+    const image = new Image();
+    image.onload = () => draw();
+    image.src = url;
+    demOverlays[kind] = image;
+    result.textContent = `${CAMP_ANALYSES[kind].title} shown. ${grid.legends[kind].note}`;
+  } catch (error) {
+    demAnalysisKeys[kind] = "";
+    result.textContent = error.message;
+  }
+  draw();
+  updateDemLegend();
+}
+document.getElementById("profile").addEventListener("change", () => {
+  if (demLayers.has("walkback")) loadDemAnalysis("walkback");
 });
 document.getElementById("overlayOpacity").addEventListener("input", event => {
   overlayOpacity = event.target.valueAsNumber / 100;

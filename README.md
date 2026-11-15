@@ -1,6 +1,6 @@
 # ARES / Field Atlas
 
-A Marswalk planning tool for the NASA Space Apps 2026 challenge "Interplanetary Survival Guide: Martian Map". It layers elevation, thermal, mineral and geology data for a location on Mars, plans slope-limited walking routes over the elevation, and shows what each data layer records at every planned stop. Nothing on the map is invented: anything the loaded data cannot support is marked as not calculated.
+A Marswalk planning tool for the NASA Space Apps 2026 challenge "Interplanetary Survival Guide: Martian Map". It layers elevation, optical imagery, thermal, mineral and geology data for a location on Mars, plans slope-limited walking routes over the elevation, and shows what each data layer records at every planned stop. Nothing on the map is invented: anything the loaded data cannot support is marked as not calculated.
 
 Features: a planned mission on Jezero crater's western rim, a **Data files** tab for loading any GeoTIFFs, an alignment preview, map layers with legends, editable waypoints, three slope-limited route strategies, a breakdown of what each route crosses in every loaded layer (after Gihan Kesara's route geology analysis), 2D and 3D map exports with an elevation profile, and a responsive layout for desktop and tablet.
 
@@ -35,6 +35,7 @@ All in `included-data/`, so the app works straight after cloning:
 | File | Contents | Source |
 |---|---|---|
 | `Jezero_WesternRim_Elevation_CTX_20m.tif` | Elevation, 20 m pixels, 14 × 14 km around the mission | Unchanged 700 × 700 pixel window of the USGS Mars 2020 Science Investigation CTX DEM mosaic (from NASA MRO Context Camera images) |
+| `Jezero_WesternRim_Optical_CTX_10m.tif` | Black-and-white orbital photograph, 10 m pixels, same 14 × 14 km area | USGS Mars 2020 Science Investigation CTX orthomosaic (from NASA MRO Context Camera images), window averaged from 5 m to 10 m |
 | `Jezero_ThermalInertia_100m.tif` | Thermal inertia, 100 m pixels (originally `Jezero_Thermal_Inertia_v1.tiff`) | Source not recorded in the file |
 | `Jezero_WesternRim_Minerals_CRISM.tif` | Mineral classes of Jezero's western rim (olivine, Fe/Mg phyllosilicates, pyroxene) | Valantinas et al., GRL (in revision), `geologic_map_CRISM_only.tif`, unchanged. CC BY 4.0. First added on the `vindeep` branch. |
 | `Jezero_Geology_USGS_SIM3464.tif` | 14 geologic map units | Sun and Stack (2020), USGS SIM 3464. Rasterised onto the CTX DEM grid by `prepare_geology.py` on the `kesara` branch, then stored as a GeoTIFF. Display colours, not official USGS colours. |
@@ -69,6 +70,15 @@ When a GeoTIFF does not describe its bands, place a sidecar file next to it name
 
 Bands with a colour table, or with declared `classes`, are drawn as class maps with a legend. The source is shown with the layer. Every visible layer has a legend under the map.
 
+## Safety analyses from the camp
+
+Two layers are calculated from the elevation model for the camp's current position (they follow the camp if it is moved):
+
+- **Line of sight:** where a person 2 m tall can see an antenna 3 m above the camp, so is in visual and radio line of sight. Terrain in the elevation model blocks the view, and the curvature of Mars is included (the surface drops about 33 m below a straight line over 15 km). Calculated within 15 km of the camp. Radio range, dust and buildings are not modelled.
+- **Walk-back distance:** the shortest walking distance from every point back to the camp without a step steeper than the selected route profile's slope limit, over the same eight-neighbour grid the route search uses. Calculated within 10 km. Areas with no walking route back are marked.
+
+For every calculated route, the along-route results show how much of it is in view of the camp and the farthest walk back. These analyses are reported for planning; they do not change the route.
+
 ## Map layers computed from elevation
 
 These are shown for reference. Routes use the elevation and slope directly, not these images.
@@ -88,6 +98,7 @@ The hillshading, three-level hazards and interpolated contours are adapted from 
   - `POST /api/alignment` with `{"files": [...]}` previews how a selection lines up.
   - `POST /api/dataset` with `{"files": [...]}` loads a selection; `GET /api/dataset` returns the loaded data and build progress.
   - `POST /api/route` with `{"start":[x,y],"goal":[x,y],"profile":"balanced"}` returns a route, the elevation of every step (`elevationsM`), `dataUsed`, and `alongRoute`: what every other loaded layer shows along the route (distance on each class, boundaries crossed, or the lowest, average and highest value). `alongRoute` is for reporting only and never affects the route.
+  - `GET /api/analysis?type=viewshed|walkback&x=&y=&profile=` calculates line of sight or walk-back distance from the camp at grid cell (x, y) and returns an overlay image and legend. Route requests that include `"camp": [x, y]` also report both along the route.
   - `GET /api/region?x0=&y0=&x1=&y1=&size=` returns the corner coordinates of a grid window and, when elevation is loaded, its elevation averaged into at most `size` samples per side.
 - A* searches eight neighbouring cells using distance plus a slope penalty, rejects steps above the selected slope limit, and avoids missing elevation cells.
 - Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`, `dist/export.js`. No build step.

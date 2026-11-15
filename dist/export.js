@@ -26,8 +26,13 @@
   // Visible mission layers in the order the map draws them: file layers, then contours, then hazards.
   function visibleLayers() {
     const active = new Set(state.layers.filter(id => availableLayers.has(id)));
-    return [...grid.layers.map(layer => layer.id), "contours", "hazards"].filter(id => active.has(id))
-      .map(id => mapLayers().find(layer => layer.id === id)).filter(layer => layer?.image);
+    return [...grid.layers.map(layer => layer.id), "contours", "viewshed", "walkback", "hazards"].filter(id => active.has(id))
+      .map(id => {
+        const layer = mapLayers().find(entry => entry.id === id);
+        // Camp analyses use the overlay image currently shown on the mission map.
+        const url = layer?.analysis ? document.querySelector(`#${id} image`)?.getAttribute("href") : null;
+        return layer && (url || layer.image) ? {...layer, url} : null;
+      }).filter(Boolean);
   }
 
   function fitText(ctx, text, width) {
@@ -46,8 +51,9 @@
           .map(item => `${item.name.split(" · ")[0]} ${distanceText(item.distanceM)} (${Math.round(100 * item.distanceM / total)}%)`);
         return `${label}: ${top.length ? top.join(", ") : "none detected"}`;
       }
-      return entry.minimum === null ? `${label}: no data`
-        : `${label}: ${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}, average ${formatValue(entry.mean)}${entry.units ? ` ${entry.units}` : ""}`;
+      if (entry.minimum === null) return `${label}: no data`;
+      if (entry.kind === "walkback") return `${label}: farthest point ${distanceText(entry.maximum)} on foot (average ${distanceText(entry.mean)})`;
+      return `${label}: ${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}, average ${formatValue(entry.mean)}${entry.units ? ` ${entry.units}` : ""}`;
     });
   }
 
@@ -204,9 +210,10 @@
         ctx.fillRect(x, y, width, 9);
         ctx.fillStyle = MUTED;
         const units = legend.units ? ` ${legend.units}` : " (units not stated)";
-        ctx.fillText(`${formatValue(legend.low)}${legend.units ? units : ""}`, x, y + 22);
+        const [low, high] = legend.labels || [`${formatValue(legend.low)}${legend.units ? units : ""}`, `${formatValue(legend.high)}${units}`];
+        ctx.fillText(low, x, y + 22);
         ctx.textAlign = "right";
-        ctx.fillText(`${formatValue(legend.high)}${units}`, x + width, y + 22);
+        ctx.fillText(high, x + width, y + 22);
         ctx.textAlign = "left";
         y += 48;
         continue;
@@ -369,7 +376,7 @@
     ctx.drawImage(base, win.x0, win.y0, win.w, win.h, ox, oy, drawW, drawH);
     ctx.filter = "none";
     for (const layer of visibleLayers()) {
-      const image = await loadImage(buildUrl(layer.image));
+      const image = await loadImage(layer.url || buildUrl(layer.image));
       if (!image) continue;
       ctx.globalAlpha = layer.derived ? 1 : overlayOpacity;
       ctx.drawImage(image, win.x0, win.y0, win.w, win.h, ox, oy, drawW, drawH);
@@ -481,7 +488,7 @@
     sctx.drawImage(base, win.x0, win.y0, win.w, win.h, 0, 0, win.w / step, win.h / step);
     sctx.filter = "none";
     for (const layer of visibleLayers()) {
-      const image = await loadImage(buildUrl(layer.image));
+      const image = await loadImage(layer.url || buildUrl(layer.image));
       if (!image) continue;
       sctx.globalAlpha = layer.derived ? 1 : overlayOpacity;
       sctx.drawImage(image, win.x0, win.y0, win.w, win.h, 0, 0, win.w / step, win.h / step);

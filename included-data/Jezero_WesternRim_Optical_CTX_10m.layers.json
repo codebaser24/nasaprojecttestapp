@@ -1,0 +1,15 @@
+{
+  "source": {
+    "title": "USGS Mars 2020 Science Investigation CTX orthomosaic of Jezero crater (M20_JezeroCrater_CTXortho_mosaic_5m.tif): 14 × 14 km window around the mission area, averaged from 5 m to 10 m pixels",
+    "citation": "USGS Astrogeology Science Center, Mars 2020 Science Investigation CTX orthomosaic, from NASA MRO Context Camera images",
+    "license": "Public domain (USGS)",
+    "url": "https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic"
+  },
+  "bands": {
+    "1": {
+      "kind": "imagery",
+      "units": "brightness",
+      "note": "Black-and-white orbital photograph from the Context Camera: what the ground looks like from above. Brightness values are not calibrated reflectance."
+    }
+  }
+}

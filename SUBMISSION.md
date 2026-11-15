@@ -10,7 +10,7 @@ ARES Field Atlas: a Marswalk planner built only on real data
 
 ## High-Level Project Summary
 
-ARES Field Atlas is a map and route planner a Mars crew could use in their habitat or on a tablet to plan a Marswalk. It layers NASA elevation, mineral, thermal and geology data for one location, Jezero crater's western rim, and plans walking routes that stay under the slope limit chosen for the crew. Each planned stop shows what every data layer records there: elevation, slope, thermal inertia, the mineral detected and the geologic unit.
+ARES Field Atlas is a map and route planner a Mars crew could use in their habitat or on a tablet to plan a Marswalk. It layers NASA elevation, optical imagery, mineral, thermal and geology data for one location, Jezero crater's western rim, and plans walking routes that stay under the slope limit chosen for the crew. Each planned stop shows what every data layer records there: elevation, slope, thermal inertia, the mineral detected and the geologic unit.
 
 Our mission walks from a flat camp to outcrops where orbital spectra detect clays and olivine with carbonate, minerals that record past water, and finishes at the rim's high point. Every target was chosen from the data, not placed by hand.
 
@@ -30,7 +30,7 @@ https://github.com/codebaser24/nasaprojecttestapp/tree/L4H1RU
 
 **What it does**
 
-- **Layered map.** Elevation (shaded relief), slope hazards, contours, CRISM mineral detections, thermal inertia and USGS geologic units, each with its own legend and source.
+- **Layered map.** Elevation (shaded relief), CTX optical imagery, slope hazards, contours, CRISM mineral detections, thermal inertia and USGS geologic units, each with its own legend and source.
 - **Mission plan.** Six targets on Jezero's western rim, given by latitude and longitude in `mission.json`:
   - a flat camp;
   - Fe/Mg clay, pyroxene, olivine–carbonate and weak-olivine outcrops;
@@ -46,6 +46,7 @@ https://github.com/codebaser24/nasaprojecttestapp/tree/L4H1RU
   | Shortest | 22° |
 
   The default loop is 7.8 km with 427 m of ascent. Every leg is reachable even under the 10° limit.
+- **Safety from the camp.** Two analyses calculated from elevation for the camp's position: **line of sight** (where the crew can see the camp's antenna, including the curvature of Mars) and **walk-back distance** (the shortest walk back to the camp within the slope limit). For the default loop, 62% of the route is in view of the camp and the farthest point is 2.83 km from it on foot.
 - **Hazard map.** Each cell is classed by its steepest slope, using the same 10°, 18° and 22° limits.
 - **Exports.**
   - A 2D traverse map, with a scale bar computed from the data and real corner coordinates.
@@ -87,8 +88,9 @@ Yes. We used an AI coding assistant (Claude, by Anthropic) to help write and tes
 ## NASA Data
 
 - **Elevation:** USGS Astrogeology, Mars 2020 Science Investigation CTX DEM mosaic of Jezero crater, 20 m/pixel. It is made from NASA Mars Reconnaissance Orbiter Context Camera (CTX) stereo images. https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic
+- **Optical imagery:** USGS Astrogeology, Mars 2020 Science Investigation CTX orthomosaic of Jezero crater, 5 m/pixel (mission-area window, averaged to 10 m). It is made from NASA Mars Reconnaissance Orbiter Context Camera (CTX) images. https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic
 - **Minerals:** CRISM-only mineral map of Jezero's western rim, from NASA Mars Reconnaissance Orbiter CRISM spectra. Valantinas et al., "Partially altered olivine in the western rim of Jezero crater, Mars: preserved pre-impact Noachian basement", GRL (in revision), CC BY 4.0. https://github.com/euchas/jezero-rim-mapping
-- **Geology:** Sun, V.Z. and Stack, K.M. (2020), Geologic map of Jezero crater and the Nili Planum region, Mars. USGS Scientific Investigations Map 3464, USGS–NASA Planetary Geologic Mapping Program. https://pubs.usgs.gov/sim/3464/
+- **Geology (USGS-NASA Planetary Geologic Mapping Program):** Sun, V.Z. and Stack, K.M. (2020), Geologic map of Jezero crater and the Nili Planum region, Mars. USGS Scientific Investigations Map 3464, USGS–NASA Planetary Geologic Mapping Program. https://pubs.usgs.gov/sim/3464/
 - **Thermal inertia:** **TODO:** confirm the source of `included-data/Jezero_ThermalInertia_100m.tif` (originally `Jezero_Thermal_Inertia_v1.tiff`) (for example, a Mars Odyssey THEMIS-derived product) and add its citation and link.
 
 ## Space Agency Partner Data and Other References
