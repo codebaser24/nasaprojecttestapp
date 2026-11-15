@@ -1457,3 +1457,212 @@ body:has(.map-expanded) {
   font-weight: 600;
   white-space: nowrap;
 }
+/* ARES — Astronaut Mission Cockpit */
+
+.mission-cockpit {
+  margin-top: 24px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.mission-cockpit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.mission-cockpit-header h3 {
+  margin: 8px 0 0;
+  font:
+    600 20px "Space Grotesk",
+    sans-serif;
+  color: #edf0e8;
+}
+
+.mission-demo-badge {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+.mission-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mission-resource {
+  min-width: 0;
+  padding: 18px;
+  background: #222a23;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mission-resource > span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.mission-resource strong {
+  color: var(--lime);
+  font:
+    600 28px "Space Grotesk",
+    sans-serif;
+}
+
+.mission-cockpit-note {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 650px) {
+  .mission-resource-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-cockpit {
+    padding: 16px;
+  }
+
+  .mission-resource strong {
+    font-size: 24px;
+  }
+}
+.mission-meter {
+  height: 6px;
+  width: 100%;
+  background: #465046;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mission-meter-fill {
+  height: 100%;
+  background: var(--lime);
+  border-radius: inherit;
+}
+
+.mission-meter-fill.oxygen {
+  background: #9ccde8;
+}
+
+.mission-resource small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.mission-resource:has(.oxygen) strong {
+  color: #9ccde8;
+}
+
+.mission-resource:nth-child(3) strong {
+  color: #f0c778;
+}
+/* ARES — Expandable Mission Forecast */
+
+.mission-forecast {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mission-forecast summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  cursor: pointer;
+  color: var(--lime);
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+  min-height: 48px;
+}
+
+.mission-forecast summary::-webkit-details-marker {
+  display: none;
+}
+
+.mission-forecast summary::marker {
+  content: "";
+}
+
+.mission-forecast summary:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: -3px;
+}
+
+.forecast-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.mission-forecast[open] .forecast-hint {
+  color: var(--lime);
+}
+
+.mission-forecast-content {
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.forecast-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.forecast-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.forecast-row strong {
+  color: #edf0e8;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.forecast-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Route-informed, simulated resource forecast feedback */
+.forecast-duration {
+  margin: 12px 0 0;
+  color: #b7c8b0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.resource-warning:not([hidden]) {
+  display: block;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #a98450;
+  border-radius: 6px;
+  background: #3a2b1b;
+  color: #f4d8a3;
+  font-size: 11px;
+  line-height: 1.5;
+}

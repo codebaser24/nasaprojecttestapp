@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#111513" />
     <title>ARES / Field Atlas</title>
-    <link rel="stylesheet" href="style.css?v=geology-v1" />
+    <link rel="stylesheet" href="style.css?v=resources-v1" />
   </head>
   <body>
     <aside class="rail">
@@ -290,6 +290,79 @@
                   <p>Sunset at 17:58 LMST</p>
                 </div>
               </div>
+              <div class="mission-cockpit">
+                <div class="mission-cockpit-header">
+                  <div>
+                    <span class="eyebrow">ARES / MISSION RESOURCES</span>
+                    <h3>Astronaut Mission Cockpit</h3>
+                  </div>
+                  <span class="mission-demo-badge">SIMULATED</span>
+                </div>
+
+                <div class="mission-resource-grid">
+                  <div class="mission-resource">
+                    <span>Vehicle Battery</span>
+                    <strong>82%</strong>
+                    <div class="mission-meter">
+                      <div class="mission-meter-fill" style="width: 82%"></div>
+                    </div>
+                    <small>Demo charge level</small>
+                  </div>
+
+                  <div class="mission-resource">
+                    <span>Suit Oxygen</span>
+                    <strong>91%</strong>
+                    <div class="mission-meter">
+                      <div
+                        class="mission-meter-fill oxygen"
+                        style="width: 91%"
+                      ></div>
+                    </div>
+                    <small>Demo oxygen level</small>
+                  </div>
+
+                  <div class="mission-resource">
+                    <span>Solar Input</span>
+                    <strong>120 W</strong>
+                    <small>Estimated input power</small>
+                  </div>
+                </div>
+                <details class="mission-forecast">
+                  <summary>
+                    <span>◇ Mission Forecast</span>
+                    <span class="forecast-hint">Tap to expand</span>
+                  </summary>
+
+                  <div class="mission-forecast-content">
+                    <div class="forecast-row">
+                      <span>Battery after journey</span>
+                      <strong id="batteryForecast">Awaiting route</strong>
+                    </div>
+
+                    <div class="forecast-row">
+                      <span>Oxygen after mission</span>
+                      <strong id="oxygenForecast">Awaiting route</strong>
+                    </div>
+
+                    <div class="forecast-row">
+                      <span>Solar energy harvested</span>
+                      <strong id="solarForecast">Awaiting route</strong>
+                    </div>
+
+                    <p id="resourceWarning" class="resource-warning" role="status" aria-live="polite" hidden></p>
+                    <p id="forecastDuration" class="forecast-duration">Mission duration: Awaiting route</p>
+                    <p class="forecast-note">
+                      Route-informed simulation, not operational guidance. Assumes 8 km/h travel,
+                      30 min science activity, 30 min contingency, 2.5 kWh battery,
+                      120 W solar input at 70% collection efficiency. Solar harvest is
+                      reported separately and is not credited to battery charge.
+                    </p>
+                  </div>
+                </details>
+                <p class="mission-cockpit-note">
+                  Demonstration values only — no live telemetry connected.
+                </p>
+              </div>
             </div>
           </div>
           <aside class="planner">
@@ -527,7 +600,7 @@
     </dialog>
     <div id="toast" role="status"></div>
     <script src="app.js?v=mission-fullscreen-tools"></script>
-    <script src="terrain.js?v=geology-v1"></script>
+    <script src="terrain.js?v=resources-v1"></script>
     <script src="views.js?v=dem-controls"></script>
   </body>
 </html>

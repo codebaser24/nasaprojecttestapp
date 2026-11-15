@@ -231,6 +231,7 @@ function refreshMissionRouteDisplay() {
   missionRouteRequest = null;
   missionDemSummary = null;
   calculatedPlan = calculatedDisplay = undefined;
+  resetResourceForecast();
   calculateMission.disabled = state.ids.length < 2;
   calculateMission.textContent = "Calculate route";
   stopMission.disabled = true;
@@ -300,6 +301,118 @@ calculateMission.onclick = () => {
   }
   routeMissionOnDem();
 };
+function calculateOxygenForecast(distanceM) {
+  // Demonstration assumptions
+  const speedKmH = 8;
+  const scienceHours = 0.5;
+  const contingencyHours = 0.5;
+
+  const oxygenCapacityKg = 1.0;
+  const startingOxygenPercent = 91;
+  const oxygenRateKgH = 0.076;
+
+  // Convert route distance from meters to kilometers
+  const distanceKm = distanceM / 1000;
+
+  // Calculate total mission duration
+  const travelHours = distanceKm / speedKmH;
+  const missionHours = travelHours + scienceHours + contingencyHours;
+
+  // Calculate oxygen consumption
+  const oxygenUsedKg = missionHours * oxygenRateKgH;
+
+  // Calculate remaining oxygen
+  const startingOxygenKg = oxygenCapacityKg * (startingOxygenPercent / 100);
+
+  const remainingOxygenKg = startingOxygenKg - oxygenUsedKg;
+
+  const remainingOxygenPercent = (remainingOxygenKg / oxygenCapacityKg) * 100;
+
+  return {
+    missionHours,
+    oxygenUsedKg,
+    remainingOxygenPercent,
+  };
+}
+// Demonstration-only parameters; not validated Mars vehicle or EVA specifications.
+const RESOURCE_MODEL = Object.freeze({
+  startingBatteryPercent: 82,
+  batteryCapacityKWh: 2.5,
+  driveKWhPerKm: 0.085,
+  climbKWhPerMeter: 0.00015,
+  solarPowerKW: 0.12,
+  solarEfficiency: 0.7,
+  reserveWarningPercent: 20,
+});
+
+function resetResourceForecast() {
+  for (const id of ["oxygenForecast", "batteryForecast", "solarForecast"]) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = "Awaiting route";
+  }
+  const duration = document.getElementById("forecastDuration");
+  if (duration) duration.textContent = "Mission duration: Awaiting route";
+  const warning = document.getElementById("resourceWarning");
+  if (warning) {
+    warning.textContent = "";
+    warning.hidden = true;
+  }
+}
+
+function calculateResourceForecast(distanceM, ascentM) {
+  const oxygen = calculateOxygenForecast(distanceM);
+  const energyUsedKWh =
+    (distanceM / 1000) * RESOURCE_MODEL.driveKWhPerKm +
+    ascentM * RESOURCE_MODEL.climbKWhPerMeter;
+  const batteryRemainingPercent =
+    RESOURCE_MODEL.startingBatteryPercent -
+    (energyUsedKWh / RESOURCE_MODEL.batteryCapacityKWh) * 100;
+  const solarHarvestKWh =
+    RESOURCE_MODEL.solarPowerKW *
+    RESOURCE_MODEL.solarEfficiency *
+    oxygen.missionHours;
+  return { ...oxygen, energyUsedKWh, batteryRemainingPercent, solarHarvestKWh };
+}
+
+function showResourceForecast(forecast) {
+  const display = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  };
+  display(
+    "oxygenForecast",
+    `${Math.max(0, forecast.remainingOxygenPercent).toFixed(1)}%`,
+  );
+  display(
+    "batteryForecast",
+    `${Math.max(0, forecast.batteryRemainingPercent).toFixed(1)}%`,
+  );
+  display("solarForecast", `${forecast.solarHarvestKWh.toFixed(2)} kWh`);
+  display(
+    "forecastDuration",
+    `Mission duration: ${forecast.missionHours.toFixed(2)} h (including science and contingency)`,
+  );
+
+  const alerts = [];
+  for (const [label, value] of [
+    ["Battery", forecast.batteryRemainingPercent],
+    ["Oxygen", forecast.remainingOxygenPercent],
+  ]) {
+    if (value < 0)
+      alerts.push(`${label} demand exceeds the simulated starting supply`);
+    else if (value < RESOURCE_MODEL.reserveWarningPercent)
+      alerts.push(
+        `${label} below ${RESOURCE_MODEL.reserveWarningPercent}% reserve`,
+      );
+  }
+  const warning = document.getElementById("resourceWarning");
+  if (warning) {
+    warning.hidden = alerts.length === 0;
+    warning.textContent = alerts.length
+      ? `Simulation warning: ${alerts.join("; ")}.`
+      : "";
+  }
+}
 
 async function routeMissionOnDem() {
   if (!grid) return;
@@ -307,6 +420,7 @@ async function routeMissionOnDem() {
   const controller = new AbortController();
   missionRouteRequest = controller;
   missionDemSummary = null;
+  resetResourceForecast();
   calculatedPlan = missionPlanKey();
   const routeLine = document.getElementById("routeLine");
   const status = document.getElementById("advisoryText");
@@ -386,14 +500,29 @@ async function routeMissionOnDem() {
       maxSlopeDeg: Math.max(...legs.map((leg) => leg.maxSlopeDeg)),
       legs,
     };
+    // The route already includes the return leg; never double its distance.
+    const resources = calculateResourceForecast(
+      total,
+      missionDemSummary.ascentM,
+    );
+    missionDemSummary.resources = {
+      ...resources,
+      model: "illustrative-v1",
+      assumptions: RESOURCE_MODEL,
+    };
+    showResourceForecast(resources);
+    document.getElementById("duration").textContent =
+      `${Math.floor(resources.missionHours)}h ${Math.round((resources.missionHours % 1) * 60)}m`;
     distance.innerHTML = `${(total / 1000).toFixed(2)} <small>km</small>`;
     slope.innerHTML = `${Math.max(...legs.map((leg) => leg.maxSlopeDeg)).toFixed(1)} <small>°</small>`;
     title.textContent = "DEM route calculated";
-    status.textContent = `${legs.length} legs including return · ${legs.reduce((sum, leg) => sum + leg.ascentM, 0)} m total ascent. Duration and oxygen require a separate model.`;
+    status.textContent = `${legs.length} legs including return · ${legs.reduce((sum, leg) => sum + leg.ascentM, 0)} m total ascent. Resource forecasts use illustrative assumptions; not operational guidance.`;
     rememberDisplay();
     await new Promise((resolve) => setTimeout(resolve, 450));
   } catch (error) {
     if (controller.signal.aborted) return;
+    missionDemSummary = null;
+    resetResourceForecast();
     title.textContent = "Mission route unavailable";
     status.textContent = error.message;
     rememberDisplay();
