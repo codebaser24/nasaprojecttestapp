@@ -1,0 +1,14 @@
+{
+  "source": {
+    "title": "USGS Mars 2020 Science Investigation CTX DEM mosaic of Jezero crater: unchanged 700 × 700 pixel window (14 × 14 km) of M20_JezeroCrater_CTXDEM_20m.tif around the mission area",
+    "citation": "USGS Astrogeology Science Center, Mars 2020 Science Investigation CTX DEM Mosaic, from NASA MRO Context Camera stereo images",
+    "license": "Public domain (USGS)",
+    "url": "https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic"
+  },
+  "bands": {
+    "1": {
+      "kind": "elevation",
+      "note": "Included with the repository so the app works without downloading the full 90 MB mosaic. Load the full mosaic from the link above to see the whole crater."
+    }
+  }
+}

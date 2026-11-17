@@ -40,10 +40,13 @@ function draw() {
   context.translate(canvas.width / 2 + demX, canvas.height / 2 + demY);
   context.scale(demZoom, demZoom);
   context.translate(-canvas.width / 2, -canvas.height / 2);
+  // With elevation colours off, the shaded base map is drawn in grey so other layers stand out.
+  context.filter = grid.baseLayer === "elevation" && !demLayers.has("elevation") ? "grayscale(1)" : "none";
   context.drawImage(base, 0, 0);
+  context.filter = "none";
   for (const layer of demLayers) {
     const overlay = demOverlays[layer];
-    context.globalAlpha = layer === "contours" || layer === "hazards" ? 1 : overlayOpacity;
+    context.globalAlpha = OPAQUE_OVERLAYS.has(layer) ? 1 : overlayOpacity;
     if (overlay?.complete && overlay.naturalWidth) context.drawImage(overlay, 0, 0);
   }
   context.globalAlpha = 1;
@@ -90,13 +93,200 @@ function draw() {
   context.restore();
 }
 
+function formatValue(value) {
+  return Math.abs(value) >= 100 ? value.toFixed(0) : String(+value.toPrecision(3));
+}
+
+function sourceText(source) {
+  if (!source) return "";
+  return [source.citation || source.title, source.license].filter(Boolean).join(" · ");
+}
+
+// Legend data comes from the build: the base elevation, derived overlays, and each loaded layer.
+function legendEntry(id) {
+  if (!grid?.legends) return null;
+  if (id === "elevation-base") return grid.legends.elevation && {title: "Elevation (base map)", legend: grid.legends.elevation};
+  if (id === "hazards") return grid.legends.hazards && {title: "Slope hazards", legend: grid.legends.hazards};
+  if (id === "contours") return grid.legends.contours && {title: "Topography contours", legend: grid.legends.contours};
+  if (CAMP_ANALYSES[id]) return grid.legends[id] && {title: CAMP_ANALYSES[id].title, legend: grid.legends[id]};
+  const layer = grid.layers.find(entry => entry.id === id);
+  return layer?.legend && {title: `${KIND_LABELS[layer.kind]} · ${layer.file}`, legend: layer.legend,
+    note: layer.note, source: sourceText(layer.source), units: layer.units};
+}
+
+function legendHtml(ids) {
+  return ids.map(legendEntry).filter(Boolean).map(({title, legend, note, source}) => {
+    let body = "";
+    if (legend.type === "ramp") {
+      const units = legend.units ? ` ${escapeText(legend.units)}` : "";
+      const [low, high] = legend.labels || [`${formatValue(legend.low)}${units}`, `${formatValue(legend.high)}${units}`];
+      body = `<div class="legend-ramp" style="background:linear-gradient(90deg,${legend.colours.join(",")})"></div>
+        <div class="legend-scale"><span>${escapeText(low)}</span><span>${escapeText(high)}</span></div>
+        ${legend.units || legend.labels ? "" : "<small>Units are not stated in the file.</small>"}`;
+    } else {
+      body = `<ul class="legend-classes">${legend.items.map(item => {
+        const swatch = legend.type === "lines"
+          ? `<i class="legend-line" style="border-top:${item.width}px solid ${item.colour}"></i>`
+          : `<i${item.colour && !item.hidden ? ` style="background:${item.colour}"` : ' class="legend-none"'}></i>`;
+        const share = item.gridPercent != null ? ` <small>${item.gridPercent}% of grid</small>` : "";
+        const hidden = item.hidden ? ` <small>not shown: ${escapeText(item.reason || "hidden")}</small>` : "";
+        return `<li class="${item.hidden ? "legend-hidden" : ""}">${swatch}<span>${escapeText(item.name)}${share}${hidden}</span></li>`;
+      }).join("")}</ul>`;
+    }
+    const notes = [legend.note, note, source && `Source: ${source}`].filter(Boolean)
+      .map(text => `<small>${escapeText(text)}</small>`).join("");
+    return `<div class="legend-block"><b>${escapeText(title)}</b>${body}${notes}</div>`;
+  }).join("");
+}
+
+// ------------------------------------------------ what the route crosses in each loaded layer
+// After Gihan Kesara's route geology analysis (kesara branch), extended to every loaded layer.
+
+function distanceText(metres) {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`;
+}
+
+// Adds up the per-leg results of a multi-leg mission into one result per layer.
+function combineAlongRoute(legs) {
+  const combined = new Map();
+  for (const leg of legs) {
+    for (const entry of leg.alongRoute || []) {
+      const total = combined.get(entry.layer) || {...entry, classes: [], noDataM: 0, boundaries: 0, coveredM: 0,
+        minimum: null, maximum: null, weightedSum: 0};
+      total.noDataM += entry.noDataM;
+      if (entry.type === "classes") {
+        total.boundaries += entry.boundaries;
+        for (const item of entry.classes) {
+          const existing = total.classes.find(other => other.name === item.name);
+          if (existing) existing.distanceM += item.distanceM;
+          else total.classes.push({...item});
+        }
+      } else if (entry.minimum !== null) {
+        total.coveredM += entry.coveredM;
+        total.weightedSum += entry.mean * entry.coveredM;
+        total.minimum = total.minimum === null ? entry.minimum : Math.min(total.minimum, entry.minimum);
+        total.maximum = total.maximum === null ? entry.maximum : Math.max(total.maximum, entry.maximum);
+      }
+      combined.set(entry.layer, total);
+    }
+  }
+  return [...combined.values()].map(total => {
+    if (total.type === "classes") total.classes.sort((a, b) => b.distanceM - a.distanceM);
+    else total.mean = total.coveredM ? total.weightedSum / total.coveredM : null;
+    return total;
+  });
+}
+
+function alongRouteHtml(entries) {
+  if (!entries?.length) return "";
+  const blocks = entries.map(entry => {
+    const title = `${KIND_LABELS[entry.kind] || entry.kind} · ${escapeText(entry.file)}`;
+    if (entry.type === "classes") {
+      const total = entry.classes.reduce((sum, item) => sum + item.distanceM, 0) + entry.noDataM;
+      const share = metres => total ? (100 * metres / total).toFixed(0) : 0;
+      const bar = entry.classes.map(item => `<i style="width:${share(item.distanceM)}%;background:${item.colour || "#5d675b"}" title="${escapeText(item.name)}"></i>`).join("");
+      const rows = entry.classes.slice(0, 6).map(item => `<li><i style="background:${item.colour || "#5d675b"}"></i><span>${escapeText(item.name)}${item.hidden ? " <small>(not drawn on the map)</small>" : ""}</span><b>${distanceText(item.distanceM)} · ${share(item.distanceM)}%</b></li>`).join("");
+      const more = entry.classes.length > 6 ? `<li class="muted">+ ${entry.classes.length - 6} more</li>` : "";
+      const gaps = entry.noDataM ? `<li class="muted"><i></i><span>No data in this file</span><b>${distanceText(entry.noDataM)} · ${share(entry.noDataM)}%</b></li>` : "";
+      return `<div class="along-layer"><b>${title}</b><div class="along-bar">${bar}</div><ul>${rows}${more}${gaps}</ul>
+        <small>${entry.boundaries} boundar${entry.boundaries === 1 ? "y" : "ies"} crossed</small></div>`;
+    }
+    if (entry.kind === "walkback") {
+      const text = entry.minimum === null ? "Outside the walk-back analysis area"
+        : `Farthest point on this route is ${distanceText(entry.maximum)} from the camp on foot (average ${distanceText(entry.mean)}).`;
+      return `<div class="along-layer"><b>${title}</b><p>${text}${entry.noDataM ? ` No walking route back for ${distanceText(entry.noDataM)} of it.` : ""}</p></div>`;
+    }
+    const units = entry.units ? ` ${escapeText(entry.units)}` : "";
+    const values = entry.minimum === null ? "No data along this route"
+      : `${formatValue(entry.minimum)} to ${formatValue(entry.maximum)}${units}, average ${formatValue(entry.mean)}${units}${entry.units ? "" : " (units not stated in the file)"}`;
+    const gaps = entry.noDataM ? ` · no data for ${distanceText(entry.noDataM)}` : "";
+    return `<div class="along-layer"><b>${title}</b><p>${values}${gaps}</p></div>`;
+  });
+  return `<div class="along-route-title"><span class="eyebrow">ALONG THIS ROUTE</span><small>From the loaded files at every route cell. Shown only; not used to choose the route.</small></div>${blocks.join("")}`;
+}
+
+// The elevation colour legend is shown only while elevation colours are switched on.
+function baseLegendIds(active = ["elevation"]) {
+  if (grid?.baseLayer === "elevation") return active.includes("elevation") ? ["elevation-base"] : [];
+  return grid?.baseLayer ? [grid.baseLayer] : [];
+}
+
+function updateDemLegend() {
+  if (grid) document.getElementById("demLegend").innerHTML = legendHtml([...baseLegendIds([...demLayers]), ...demLayers]);
+}
+
+// Called by render() in app.js whenever the mission map's layers change.
+function updateMissionLegend() {
+  if (!grid) return;
+  const active = state.layers.filter(id => availableLayers.has(id));
+  document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(active), ...active]);
+  const missionBase = document.getElementById("missionBase");
+  if (missionBase) missionBase.style.filter = grid.baseLayer === "elevation" && !active.includes("elevation") ? "grayscale(1)" : "";
+  refreshMissionAnalyses(active);
+  window.updateEvaEstimate?.();  // Stop times may have been edited.
+}
+
+// Loads line-of-sight and walk-back overlays for the camp's current position and route profile.
+// Waits briefly so dragging the camp does not start a calculation at every step.
+const analysisTimers = {};
+function refreshMissionAnalyses(active) {
+  for (const kind of Object.keys(CAMP_ANALYSES)) {
+    const group = document.getElementById(kind);
+    if (!group || !active.includes(kind)) continue;
+    const key = `${campCell()}|${kind === "walkback" ? missionProfile() : ""}|${JSON.stringify(analysisSettings())}`;
+    if (group.dataset.key === key) continue;
+    group.dataset.key = key;
+    clearTimeout(analysisTimers[kind]);
+    analysisTimers[kind] = setTimeout(() => loadCampAnalysis(kind, missionProfile())
+      .then(url => {
+        if (group.dataset.key !== key) return;
+        setTerrainImage(group, url);
+        document.getElementById("missionLegend").innerHTML = legendHtml([...baseLegendIds(state.layers), ...state.layers.filter(id => availableLayers.has(id))]);
+      })
+      .catch(error => {
+        group.dataset.key = "";
+        notify(`${CAMP_ANALYSES[kind].title}: ${error.message}`);
+      }), 400);
+  }
+}
+
+// Legends sit under the map normally. In fullscreen that space is gone, so the legend moves
+// onto the map in a collapsible panel, and moves back when fullscreen ends.
+function floatLegendInFullscreen(mapElement, legend) {
+  const overlay = document.createElement("div");
+  overlay.className = "legend-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = '<button type="button" class="legend-toggle" aria-expanded="true">LEGEND</button>';
+  mapElement.append(overlay);
+  const home = document.createComment("Legend location outside fullscreen");
+  legend.before(home);
+  const toggle = overlay.querySelector("button");
+  toggle.onclick = () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(open));
+    legend.hidden = !open;
+  };
+  const sync = () => {
+    const expanded = document.fullscreenElement === mapElement || mapElement.classList.contains("map-expanded");
+    if (expanded === !overlay.hidden) return;
+    overlay.hidden = !expanded;
+    if (expanded) {
+      overlay.append(legend);
+    } else {
+      home.after(legend);
+      legend.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  };
+  document.addEventListener("fullscreenchange", sync);
+  new MutationObserver(sync).observe(mapElement, {attributes: true, attributeFilter: ["class"]});
+}
+
+floatLegendInFullscreen(document.getElementById("map"), document.getElementById("missionLegend"));
+floatLegendInFullscreen(document.getElementById("dem-map"), document.getElementById("demLegend"));
+
 function showSlopeHazards() {
   setTerrainImage(document.getElementById("hazards"), buildUrl("hazards.png"));
-  const legend = document.createElement("div");
-  legend.className = "slope-legend";
-  legend.innerHTML = '<strong>DEM slope hazards</strong><span><i class="slope-moderate"></i> &gt;10°–18°</span><span><i class="slope-steep"></i> &gt;18°</span>';
-  legend.title = "Maximum slope to a neighboring DEM cell. Unshaded cells may still contain smaller hazards.";
-  document.getElementById("map").append(legend);
 }
 
 let missionRouteRequest;
@@ -104,8 +294,42 @@ let missionDemSummary = null;
 let calculatedPlan;
 let calculatedDisplay;
 const routeDisplayIds = ["distance", "ascent", "slope", "advisoryTitle", "advisoryText"];
-const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", unknown: "Unidentified"};
-const KIND_ICONS = {elevation: "▲", imagery: "▣", mineral: "◇", thermal: "☀", unknown: "?"};
+const KIND_LABELS = {elevation: "Elevation", imagery: "Imagery", mineral: "Minerals", thermal: "Thermal", geology: "Geology", unknown: "Unidentified",
+  lineOfSight: "Line of sight to the camp", walkback: "Walk-back to the camp"};
+// Safety analyses calculated from elevation for the camp's current position.
+const CAMP_ANALYSES = {
+  viewshed: {label: "◎ Line of sight", title: "Line of sight from the camp",
+    hint: "Where a person can see the camp's antenna (radio line of sight), calculated from elevation"},
+  walkback: {label: "↩ Walk-back", title: "Walk-back distance to the camp",
+    hint: "Shortest walking distance back to the camp within the route's slope limit, calculated from elevation"}
+};
+const OPAQUE_OVERLAYS = new Set(["contours", "hazards", ...Object.keys(CAMP_ANALYSES)]);
+
+// Grid cell of the mission's camp (the first stop), wherever it has been moved to.
+function campCell() {
+  const camp = catalog.find(point => point.id === "hab");
+  return camp && grid ? [Math.floor(camp.x / 1000 * grid.width), Math.floor(camp.y / 700 * grid.height)] : null;
+}
+
+function missionProfile() {
+  return {balanced: "balanced", safe: "low-exposure", science: "shortest"}[state.mode];
+}
+
+// Line-of-sight and walk-back settings from the editable assumptions (eva.js); the server has the same defaults.
+function analysisSettings() {
+  return window.analysisSettings?.() || {};
+}
+
+async function loadCampAnalysis(kind, profile) {
+  const [x, y] = campCell();
+  const settings = new URLSearchParams(Object.entries(analysisSettings()).map(([name, value]) => [name, String(value)]));
+  const result = await request(`/api/analysis?type=${kind}&x=${x}&y=${y}&profile=${profile}&${settings}`);
+  grid.legends[kind] = result.legend;
+  return buildUrl(result.image);
+}
+const KIND_ICONS = {elevation: "▲", imagery: "▣", mineral: "◇", thermal: "☀", geology: "▦", unknown: "?"};
+// Kinds that are shown for reference when a loaded file has them.
+const OPTIONAL_KINDS = ["imagery", "mineral", "thermal", "geology"];
 const SHOWN_ONLY = "Shown only; not used in route calculations";
 let overlayOpacity = 0.8;
 
@@ -123,19 +347,33 @@ function shortName(name) {
   return name.length > 24 ? name.slice(0, 22) + "…" : name;
 }
 
+// Thresholds and intervals recorded by the build (older builds used 10°/18° and 50 m).
+function derivedText(kind) {
+  if (kind === "hazards") {
+    const limits = grid.derived.hazardThresholdsDeg || [10, 18];
+    return limits.map(value => `${value}°`).join(", ").replace(/, ([^,]*)$/, " and $1");
+  }
+  return (grid.derived.contourIntervalsM || [50]).map(value => `${value} m`).join(" and ");
+}
+
 // Every layer button, including disabled placeholders for kinds no loaded file contains.
 function mapLayers() {
   const needsRouting = "Needs elevation that meets the routing requirements";
   const layers = [
+    // Elevation colours on the base map, after Gihan Kesara's elevation control on the kesara branch.
+    ...(grid.baseLayer === "elevation" ? [{id: "elevation", label: "▲ Elevation colours", present: true, derived: true,
+      title: "Colour the shaded base map by elevation. Turn off for a grey shaded map that makes other layers easier to read."}] : []),
     {id: "contours", label: "◉ Topography", image: "contours.png", present: grid.derived.contours, derived: true,
-      title: grid.derived.contours ? "50 m contours computed from elevation" : needsRouting},
+      title: grid.derived.contours ? `Contours every ${derivedText("contours")}, interpolated from elevation` : needsRouting},
     {id: "hazards", label: "△ Hazards", image: "hazards.png", present: grid.derived.hazards, derived: true,
-      title: grid.derived.hazards ? "Slopes above 10° and 18°, computed from elevation" : needsRouting},
+      title: grid.derived.hazards ? `Slopes steeper than ${derivedText("hazards")}, computed from elevation` : needsRouting},
+    ...Object.entries(CAMP_ANALYSES).map(([id, analysis]) => ({id, label: analysis.label, derived: true, analysis: true,
+      present: Boolean(grid.derived.slope && campCell()), title: grid.derived.slope ? analysis.hint : needsRouting})),
     ...grid.layers.map(layer => ({id: layer.id, image: layer.image, present: true,
       label: `${KIND_ICONS[layer.kind]} ${KIND_LABELS[layer.kind]} · ${shortName(layer.file)}`,
       title: `${KIND_LABELS[layer.kind]} from ${layer.file}, band ${layer.bands.join(", ")}. ${SHOWN_ONLY}.`}))
   ];
-  for (const kind of ["imagery", "mineral", "thermal"]) {
+  for (const kind of OPTIONAL_KINDS) {
     if (!grid.layers.some(layer => layer.kind === kind)) {
       layers.push({id: `missing-${kind}`, label: `${KIND_ICONS[kind]} ${KIND_LABELS[kind]}`, present: false, title: "Not in any loaded file"});
     }
@@ -158,11 +396,11 @@ function routingStatus() {
 function dataUsageText(dataUsed) {
   const shownOnly = grid.layers.map(layer => `${KIND_LABELS[layer.kind]} (${layer.file})`);
   const present = new Set(grid.layers.map(layer => layer.kind));
-  const absent = ["imagery", "mineral", "thermal"].filter(kind => !present.has(kind)).map(kind => KIND_LABELS[kind]);
+  const absent = OPTIONAL_KINDS.filter(kind => !present.has(kind)).map(kind => KIND_LABELS[kind]);
   return [`Calculated from: ${dataUsed.join("; ")}.`,
     shownOnly.length ? `Loaded but not used in route calculations: ${shownOnly.join(", ")}.` : "",
     absent.length ? `Not in the loaded files: ${absent.join(", ")}.` : "",
-    "Duration and oxygen use are not calculated."].filter(Boolean).join(" ");
+    "Duration and oxygen use are estimated in the EVA estimate from editable assumptions, not from data."].filter(Boolean).join(" ");
 }
 
 function fileRoleText(file) {
@@ -178,9 +416,12 @@ function inventoryHtml(meta) {
     units: meta.elevation.units, notes: meta.elevation.assumptions,
     use: meta.routing.available ? "Used for route calculations" : "Loaded, but the routing requirements are not met"
   }] : [];
-  const items = ["elevation", "imagery", "mineral", "thermal"].map(kind => {
+  const items = ["elevation", ...OPTIONAL_KINDS].map(kind => {
     const entries = [...(kind === "elevation" ? elevationEntries : []),
-      ...meta.layers.filter(layer => layer.kind === kind).map(layer => ({...layer, notes: [`has data on ${layer.coveragePercent}% of the grid`],
+      ...meta.layers.filter(layer => layer.kind === kind).map(layer => ({...layer,
+        notes: [`has data on ${layer.coveragePercent}% of the grid.`,
+          layer.legend?.type === "classes" ? `${layer.legend.items.filter(item => !item.hidden).length} classes shown.` : "",
+          layer.source ? `Source: ${sourceText(layer.source)}.` : ""].filter(Boolean),
         use: kind === "elevation" ? "Shown only; another elevation band is used for routing" : SHOWN_ONLY}))];
     const details = entries.length ? entries.map(entry => `<p><b>${escapeText(entry.file)}</b> · band ${entry.bands.join(", ")} · identified by ${escapeText(entry.identifiedBy)}${entry.units ? ` · units: ${escapeText(entry.units)}` : ""}${entry.notes?.length ? " · " + entry.notes.map(escapeText).join(" ") : ""}<br><span class="${entry.use.startsWith("Used") ? "use-routing" : "use-shown"}">${escapeText(entry.use)}</span></p>`).join("")
       : "<p>Not in any loaded file · not included in any calculation</p>";
@@ -189,7 +430,8 @@ function inventoryHtml(meta) {
   const unknown = meta.layers.filter(layer => layer.kind === "unknown")
     .map(layer => `Band ${layer.bands.join(", ")} of ${escapeText(layer.file)} could not be identified. It is shown, but not used in any calculation.`);
   const files = meta.files.map(file => `<li><b>${escapeText(file.name)}</b> — ${escapeText(fileRoleText(file))}</li>`).join("");
-  const derived = meta.derived.slope ? "Slope, hazards (slope above 10° and 18°) and 50 m contours are computed from elevation." : "";
+  const derived = meta.derived.slope
+    ? `Slope, hazards (slopes steeper than ${derivedText("hazards")}) and contours every ${derivedText("contours")} are computed from elevation.` : "";
   const status = routingStatus();
   const route = status.available
     ? `<p><b>Route calculation uses:</b> elevation from ${escapeText(meta.elevation.file)} and the slope computed from it. ${escapeText(derived)} No other layer affects the route.</p>`
@@ -212,11 +454,15 @@ function refreshMissionRouteDisplay() {
     routeDisplayIds.forEach((id, index) => {
       document.getElementById(id).textContent = calculatedDisplay.fields[index];
     });
+    document.getElementById("missionAlongRoute").innerHTML = calculatedDisplay.along || "";
+    window.updateEvaEstimate?.();
     return;
   }
+  document.getElementById("missionAlongRoute").innerHTML = "";
   missionRouteRequest?.abort();
   missionRouteRequest = null;
   missionDemSummary = null;
+  window.updateEvaEstimate?.();
   calculatedPlan = calculatedDisplay = undefined;
   const status = grid ? routingStatus() : {available: true};
   calculateMission.disabled = state.ids.length < 2 || !status.available;
@@ -239,7 +485,7 @@ function refreshMissionRouteDisplay() {
 const calculateMission = document.getElementById("calculateMission");
 document.getElementById("loadMissionData").onclick = () => {
   if (!grid) {
-    result.textContent = "Wait for the Jezero elevation map to load.";
+    result.textContent = "Wait for the elevation map to load.";
     return;
   }
   clearDemRoute();
@@ -315,10 +561,13 @@ async function routeMissionOnDem() {
   resetMission.disabled = false;
   calculateMission.textContent = "Calculating route… 0%";
   status.textContent = "Checking every leg, including the return to habitat.";
+  const missionAlong = document.getElementById("missionAlongRoute");
+  missionAlong.innerHTML = "";
   function rememberDisplay() {
     calculatedDisplay = {
       path: routeLine.getAttribute("d"),
-      fields: routeDisplayIds.map(id => document.getElementById(id).textContent)
+      fields: routeDisplayIds.map(id => document.getElementById(id).textContent),
+      along: missionAlong.innerHTML
     };
   }
   rememberDisplay();
@@ -329,7 +578,7 @@ async function routeMissionOnDem() {
       const leg = await request("/api/route", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full"}),
+      body: JSON.stringify({start: cells[index], goal, profile, coverage: "full", camp: campCell(), analysis: analysisSettings()}),
       signal: controller.signal
     }).catch(error => {
       throw new Error(`${points[index].name} → ${(points[index + 1] || points[0]).name}: ${error.message}`);
@@ -359,6 +608,9 @@ async function routeMissionOnDem() {
     slope.innerHTML = `${Math.max(...legs.map(leg => leg.maxSlopeDeg)).toFixed(1)} <small>°</small>`;
     title.textContent = "DEM route calculated";
     status.textContent = `${legs.length} legs including return. ${dataUsageText(legs[0].dataUsed)}`;
+    missionDemSummary.alongRoute = combineAlongRoute(legs);
+    missionAlong.innerHTML = alongRouteHtml(missionDemSummary.alongRoute);
+    window.updateEvaEstimate?.();
     rememberDisplay();
     await new Promise(resolve => setTimeout(resolve, 450));
   } catch (error) {
@@ -394,20 +646,36 @@ function showMissionTerrain() {
   frame.setAttribute("transform", `scale(1 ${frameHeight / 700})`);
   world.before(frame);
   frame.append(world);
+  // Mission targets from mission.json, placed on this grid by the build, replace the built-in stops.
+  const targets = new Map((grid.targets || []).map(target => [target.id, target]));
   for (const point of catalog) {
     if (point.id.startsWith("custom-")) continue;
+    const target = targets.get(point.id);
+    if (target) {
+      Object.assign(point, {name: target.name, type: target.type, time: target.time, detail: target.detail,
+        dataHere: target.data, x: (target.cell[0] + 0.5) / grid.width * 1000, y: (target.cell[1] + 0.5) / grid.height * 700});
+      continue;
+    }
     point.x = (grid.cropOrigin[0] + Math.floor(point.x / 1000 * 240) + 0.5) / grid.width * 1000;
     point.y = (grid.cropOrigin[1] + Math.floor(point.y / 700 * 168) + 0.5) / grid.height * 700;
   }
+  if (grid.mission) document.querySelector(".planner-title p").textContent = `Mission: ${grid.mission.name}`;
   applyWaypointEdits();
   if (base) {
     setTerrainImage(document.getElementById("terrainFallback"), base.src, true);
+    document.querySelector("#mapWorld > image").id = "missionBase";
     document.getElementById("map").classList.add("has-real-terrain");
   } else {
     document.querySelector("#terrainFallback text").textContent = "NO DISPLAYABLE LAYER IN THE LOADED FILES";
   }
   if (grid.derived.contours) setTerrainImage(document.getElementById("contours"), buildUrl("contours.png"));
   if (grid.derived.hazards) showSlopeHazards();
+  for (const kind of Object.keys(CAMP_ANALYSES)) {
+    const group = document.createElementNS(world.namespaceURI, "g");
+    group.id = kind;
+    group.style.display = "none";
+    document.getElementById("hazards").before(group);
+  }
   const overlays = document.getElementById("overlays");
   overlays.style.opacity = overlayOpacity;
   for (const layer of grid.layers) {
@@ -429,6 +697,12 @@ function showMissionTerrain() {
     ? `${latitude(bounds[1])} – ${latitude(bounds[3])} · ${longitude(bounds[0])} – ${longitude(bounds[2])}`
     : "—";
   document.getElementById("terrain").setAttribute("aria-label", `Map of ${grid.source} with planned mission waypoints`);
+  const place = grid.mission?.location || "Loaded area";
+  document.getElementById("mapTitle").textContent = place;
+  document.getElementById("demTitle").textContent = `Terrain routing · ${place}`;
+  document.getElementById("missionCode").textContent = (grid.mission?.code || "No mission for this area").toUpperCase();
+  const planet = grid.planet;
+  document.getElementById("planetTag").textContent = planet ? (planet.name || `RADIUS ${planet.radiusKm} KM`).toUpperCase() : "PLANET UNKNOWN";
   updateMapTransform();
   render();
 }
@@ -448,6 +722,12 @@ async function init() {
   for (const layer of mapLayers()) if (layer.present) availableLayers.add(layer.id);
   document.getElementById("missionLayers").innerHTML = layerButtonsHtml("data-layer");
   document.getElementById("demLayers").innerHTML = layerButtonsHtml("data-dem-layer");
+  if (grid.baseLayer === "elevation") {
+    demLayers.add("elevation");
+    const button = document.querySelector('[data-dem-layer="elevation"]');
+    button.classList.add("active");
+    button.setAttribute("aria-pressed", "true");
+  }
   document.getElementById("missionInventory").innerHTML = inventoryHtml(meta);
   document.getElementById("demInventory").innerHTML = inventoryHtml(meta);
   document.getElementById("dataStatus").textContent = `DATA: ${includedFiles().map(file => file.name).join(" + ")}`;
@@ -456,10 +736,14 @@ async function init() {
   fields.forEach((field, i) => field.max = (i % 2 ? grid.height : grid.width) - 1);
   start = [grid.cropOrigin[0] + 40, grid.cropOrigin[1] + 80];
   goal = [grid.cropOrigin[0] + 190, grid.cropOrigin[1] + 100];
+  const [camp, firstStop] = [grid.targets?.find(target => target.id === "hab"), grid.targets?.find(target => target.id !== "hab")];
+  if (camp && firstStop) [start, goal] = [[...camp.cell], [...firstStop.cell]];
   [...start, ...goal].forEach((value, index) => fields[index].value = value);
   showMissionTerrain();
   canvas.hidden = !base;
   draw();
+  updateDemLegend();
+  updateMissionLegend();
   const status = routingStatus();
   submit.disabled = !status.available;
   if (!status.available) {
@@ -494,7 +778,13 @@ canvas.onclick = event => {
   draw();
 };
 
+const demAlongRoute = document.createElement("div");
+demAlongRoute.className = "along-route";
+demAlongRoute.id = "demAlongRoute";
+result.after(demAlongRoute);
+
 function clearDemRoute() {
+  demAlongRoute.innerHTML = "";
   demRequest?.abort();
   demRequest = undefined;
   submit.disabled = !grid;
@@ -515,7 +805,7 @@ function confirmLongRoute(distanceKm) {
   const dialog = document.createElement("dialog");
   dialog.innerHTML = `<form method="dialog">
     <h2>Continue with a long route?</h2>
-    <p>These points are ${distanceKm.toFixed(1)} km apart in a straight line. Searching the full Jezero map may take longer.</p>
+    <p>These points are ${distanceKm.toFixed(1)} km apart in a straight line. Searching this far across the map may take longer.</p>
     <button class="quiet" value="cancel" autofocus>Cancel</button>
     <button class="primary" value="continue">Continue</button>
   </form>`;
@@ -553,6 +843,7 @@ form.onsubmit = async event => {
   start = nextStart;
   goal = nextGoal;
   path = [];
+  demAlongRoute.innerHTML = "";
   draw();
   submit.disabled = true;
   resetDem.disabled = false;
@@ -572,13 +863,14 @@ form.onsubmit = async event => {
       method: "POST",
       signal: controller.signal,
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start, goal, profile, coverage: "full", extended})
+      body: JSON.stringify({start, goal, profile, coverage: "full", extended, camp: campCell(), analysis: analysisSettings()})
     });
     if (demRequest !== controller) return;
     clearInterval(timer);
     path = route.path;
     draw();
     result.textContent = `${route.distanceM} m distance · ${route.ascentM} m ascent · ${route.maxSlopeDeg}° maximum slope. ${dataUsageText(route.dataUsed)}`;
+    demAlongRoute.innerHTML = alongRouteHtml(route.alongRoute);
     await new Promise(resolve => setTimeout(resolve, 450));
   } catch (error) {
     if (demRequest === controller) result.textContent = error.message;
@@ -665,6 +957,10 @@ document.getElementById("demLayers").addEventListener("click", event => {
   else demLayers.delete(layer);
   button.classList.toggle("active", active);
   button.setAttribute("aria-pressed", String(active));
+  if (CAMP_ANALYSES[layer] && active) {
+    loadDemAnalysis(layer);
+    return;
+  }
   const source = mapLayers().find(entry => entry.id === layer)?.image;
   if (source && !demOverlays[layer]) {
     const image = new Image();
@@ -673,7 +969,45 @@ document.getElementById("demLayers").addEventListener("click", event => {
     image.src = buildUrl(source);
   }
   draw();
+  updateDemLegend();
 });
+
+// Line of sight and walk-back for the camp; walk-back follows the route profile chosen above.
+const demAnalysisKeys = {};
+async function loadDemAnalysis(kind) {
+  const profile = document.getElementById("profile").value;
+  const key = `${campCell()}|${kind === "walkback" ? profile : ""}|${JSON.stringify(analysisSettings())}`;
+  if (demAnalysisKeys[kind] === key && demOverlays[kind]) {
+    draw();
+    updateDemLegend();
+    return;
+  }
+  demAnalysisKeys[kind] = key;
+  result.textContent = `Calculating ${CAMP_ANALYSES[kind].title.toLowerCase()}…`;
+  try {
+    const url = await loadCampAnalysis(kind, profile);
+    if (demAnalysisKeys[kind] !== key) return;
+    const image = new Image();
+    image.onload = () => draw();
+    image.src = url;
+    demOverlays[kind] = image;
+    result.textContent = `${CAMP_ANALYSES[kind].title} shown. ${grid.legends[kind].note}`;
+  } catch (error) {
+    demAnalysisKeys[kind] = "";
+    result.textContent = error.message;
+  }
+  draw();
+  updateDemLegend();
+}
+document.getElementById("profile").addEventListener("change", () => {
+  if (demLayers.has("walkback")) loadDemAnalysis("walkback");
+});
+// Called by eva.js when a line-of-sight or walk-back setting is edited.
+window.onAnalysisSettingsChange = () => {
+  if (!grid) return;
+  updateMissionLegend();
+  for (const kind of Object.keys(CAMP_ANALYSES)) if (demLayers.has(kind)) loadDemAnalysis(kind);
+};
 document.getElementById("overlayOpacity").addEventListener("input", event => {
   overlayOpacity = event.target.valueAsNumber / 100;
   document.getElementById("overlays").style.opacity = overlayOpacity;

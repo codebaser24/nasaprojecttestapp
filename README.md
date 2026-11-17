@@ -1,29 +1,65 @@
 # ARES / Field Atlas
 
-A responsive Marswalk planning prototype inspired by the Martian Map challenge. It loads one or more GeoTIFF files, aligns them onto one grid, and plans slope-limited routes over the elevation data.
+A Marswalk planning tool for the NASA Space Apps 2026 challenge "Interplanetary Survival Guide: Martian Map". It layers elevation, optical imagery, thermal, mineral and geology data for a location on Mars, plans slope-limited walking routes over the elevation, and shows what each data layer records at every planned stop. Nothing on the map is invented: anything the loaded data cannot support is marked as not calculated.
 
-Features: a **Data files** tab for choosing and adding GeoTIFFs, an alignment preview, map layers for whatever the loaded files contain, editable mission waypoints, three slope-limited route strategies, local plan persistence, mission JSON export, and a step-through mission preview. Responsive desktop and mobile layouts include keyboard-operable controls.
+Features: a planned mission on Jezero crater's western rim, a **Data files** tab for loading any GeoTIFFs, an alignment preview, map layers with legends, editable waypoints, three slope-limited route strategies, a breakdown of what each route crosses in every loaded layer (after Gihan Kesara's route geology analysis), 2D and 3D map exports with an elevation profile, and a responsive layout for desktop and tablet.
 
 ## Run it
 
+Tested with Python 3.15 in Chrome and Edge.
+
 ```powershell
-python -m pip install rasterio numpy
+python -m pip install rasterio numpy contourpy pillow scipy
 python server.py --port 4174
 ```
 
-Open http://127.0.0.1:4174/ and go to the **Data files** tab. Tick one or more files, check the alignment preview, then click **Load selected files**.
+Open http://127.0.0.1:4174/. On the first start the server loads the mission data automatically, then the map opens on the mission. It uses the full Jezero elevation model if `M20_JezeroCrater_CTXDEM_20m.tif` is in the project folder; otherwise it uses the 14 km mission-area window included in this repository (about 2 seconds). Click **Calculate route** in the planner, then try the map layers, the **DEM routing** tab and **Export mission**.
 
-Files are found in the project folder and in `data/`. **Browse computer…** copies a file into `data/`. Elevation for Jezero is available from the [USGS Mars 2020 CTX elevation mosaic](https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic).
+To use other data, open the **Data files** tab, tick one or more GeoTIFFs and click **Load selected files**. Files are found in `included-data/` (marked **Included with the repository** and listed first), the project folder and `data/`; **Browse computer…** copies a file into `data/`. **Hide** removes a file from the list without deleting it. The full 20 m Jezero elevation model is available from the [USGS Mars 2020 CTX elevation mosaic](https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic) (`M20_JezeroCrater_CTXDEM_20m.tif`, 90 MB, too large for git).
+
+## The mission
+
+`mission.json` defines the mission code, location and the mission "Water on Jezero's western rim": walk from a flat camp to outcrops where CRISM spectra detect Fe/Mg clays and olivine with carbonate, compare them with pyroxene-rich rock, and finish at the rim's high point. The targets were chosen from the data, not placed by hand:
+
+- each outcrop sits on a patch of CRISM mineral detections;
+- the camp is the nearest ground with no slope steeper than 4° within 120 m;
+- the viewpoint is the highest elevation within 2 km of the centre of the outcrop cluster;
+- every leg is reachable under all three slope limits. The default loop is 7.8 km with 427 m of ascent on the balanced profile.
+
+Targets are given as longitude and latitude, so they land in the right place on any loaded grid that covers them. For each target the build records what every loaded layer shows there (elevation, slope, thermal inertia, mineral class, geologic unit), and the waypoint card lists it.
+
+### Data files included in the repository
+
+All in `included-data/`, so the app works straight after cloning:
+
+| File | Contents | Source |
+|---|---|---|
+| `Jezero_WesternRim_Elevation_CTX_20m.tif` | Elevation, 20 m pixels, 14 × 14 km around the mission | Unchanged 700 × 700 pixel window of the USGS Mars 2020 Science Investigation CTX DEM mosaic (from NASA MRO Context Camera images) |
+| `Jezero_WesternRim_Optical_CTX_10m.tif` | Black-and-white orbital photograph, 10 m pixels, same 14 × 14 km area | USGS Mars 2020 Science Investigation CTX orthomosaic (from NASA MRO Context Camera images), window averaged from 5 m to 10 m |
+| `Jezero_ThermalInertia_100m.tif` | Thermal inertia, 100 m pixels (originally `Jezero_Thermal_Inertia_v1.tiff`) | Source not recorded in the file |
+| `Jezero_WesternRim_Minerals_CRISM.tif` | Mineral classes of Jezero's western rim (olivine, Fe/Mg phyllosilicates, pyroxene) | Valantinas et al., GRL (in revision), `geologic_map_CRISM_only.tif`, unchanged. CC BY 4.0. First added on the `vindeep` branch. |
+| `Jezero_Geology_USGS_SIM3464.tif` | 14 geologic map units | Sun and Stack (2020), USGS SIM 3464. Rasterised onto the CTX DEM grid by `prepare_geology.py` on the `kesara` branch, then stored as a GeoTIFF. Display colours, not official USGS colours. |
+
+Each has a `.layers.json` file next to it naming its contents, classes and source.
 
 Files can also be loaded from the command line; reload the page afterwards:
 
 ```powershell
-python prepare_full_dem.py M20_JezeroCrater_CTXDEM_20m.tif Jezero_Thermal_Inertia_v1.tiff
+python prepare_full_dem.py M20_JezeroCrater_CTXDEM_20m.tif included-data/Jezero_ThermalInertia_100m.tif
 ```
+
+## Where everything on screen comes from
+
+Every value the app shows comes from one of two places:
+
+- **the loaded data files** (elevation, imagery, thermal, minerals, geology, and everything calculated from them, including the planet name, which is recognised from the radius in the file's coordinate system), or
+- **settings with editable defaults**: `mission.json` (mission code, location, objective and targets), the stops in the planner (names, activities, minutes and positions), and **Assumptions (editable)** in the planner (EVA, rover, line-of-sight and walk-back settings).
+
+When no mission target falls inside the loaded files, the map is titled "Loaded area" and the planner shows neutral default stops (Start, Stop 1, …) to move and rename.
 
 ## Only real data is used
 
-Every band of every selected file is classified as elevation, thermal, mineral, imagery or unknown, together with how it was identified (band description or metadata, units, colour interpretation, or file name).
+Every band of every selected file is classified as elevation, thermal, mineral, geology, imagery or unknown, together with how it was identified (band description or metadata, units, colour interpretation, or file name).
 
 - **Alignment.** One file is the reference grid: the finest-resolution file with elevation, or else the finest projected file. Every other file is reprojected onto it using its own coordinates. Files from a different planetary body, or that do not overlap the reference area, are not loaded and the reason is shown.
 - **Routing uses only elevation.** Routes are calculated from one elevation band and the slope computed from it. Thermal, mineral, imagery and other bands are shown for reference only and never affect a route.
@@ -34,8 +70,56 @@ Every band of every selected file is classified as elevation, thermal, mineral, 
 When a GeoTIFF does not describe its bands, place a sidecar file next to it named `<file>.layers.json`:
 
 ```json
-{"bands": {"1": {"kind": "elevation", "units": "m"}, "2": {"kind": "thermal", "units": "K"}}}
+{"source": {"citation": "Author (year), title", "license": "CC BY 4.0", "url": "https://..."},
+ "bands": {"1": {"kind": "mineral", "note": "How to read this layer",
+                 "classes": {"1": {"name": "Bulk rim", "hidden": true, "reason": "not a mineral detection"},
+                             "2": {"name": "Olivine-bearing"}}},
+           "2": {"kind": "thermal", "units": "K"}}}
 ```
+
+Bands with a colour table, or with declared `classes`, are drawn as class maps with a legend. The source is shown with the layer. Every visible layer has a legend under the map.
+
+## Safety analyses from the camp
+
+Two layers are calculated from the elevation model for the camp's current position (they follow the camp if it is moved):
+
+- **Line of sight:** where a person (default 2 m tall) can see an antenna (default 3 m) above the camp, so is in visual and radio line of sight. Terrain in the elevation model blocks the view, and the planet's curvature is included, using the radius from the file's coordinate system (on Mars the surface drops about 33 m below a straight line over 15 km). Calculated within 15 km of the camp by default. Radio range, dust and buildings are not modelled.
+- **Walk-back distance:** the shortest walking distance from every point back to the camp without a step steeper than the selected route profile's slope limit, over the same eight-neighbour grid the route search uses. Calculated within 10 km by default. Areas with no walking route back are marked.
+
+The heights and both distances are editable under **Assumptions (editable)** in the planner; changing them recalculates the layers.
+
+For every calculated route, the along-route results show how much of it is in view of the camp and the farthest walk back. These analyses are reported for planning; they do not change the route.
+
+## EVA estimate
+
+After the mission route is calculated, the planner estimates the EVA from the route and assumptions you can edit (open **Assumptions (editable)** under the estimate). Nothing in it is measured, and it says so.
+
+- **Walking time** is worked out step by step along each leg's real elevation profile. Speed changes with slope using the shape of Tobler's hiking function (Tobler, 1993), an Earth walking model, scaled so flat ground matches the walking speed you set.
+- **Stop time** is the planned time at each stop in your plan; a contingency time is added.
+- **Totals:** EVA duration (also shown in **Est. duration**), the margin against your EVA time limit, and suit oxygen left from the supply and use rate you enter. Warnings appear when the limit is exceeded or a supply falls below the reserve level.
+- **Rover-assisted option:** driving time, rover battery left and solar energy collected (reported separately, not added to the battery).
+- Defaults are labelled as assumptions; the oxygen and rover defaults are the demonstration values from Gihan Kesara's mission resource forecast on the `kesara` branch, which this feature is adapted from. Assumptions are saved in the browser.
+
+## Mission preview and playback video
+
+**Start mission preview** offers two ways to preview the plan:
+
+- **Animated playback:** a small astronaut walks along the calculated route on the mission map (it turns to face its direction, waves at each stop and celebrates back at camp; if the EVA estimate's suit oxygen runs out before the end, it collapses where that happens and the playback stops with an "Out of oxygen (estimate)" card; this is only illustration), zoomed to the route, with the walked part in green. A display bar shows the position (latitude and longitude from the loaded file's coordinate system), elevation and slope of each route step, ascent and distance so far, and the estimated EVA time and suit oxygen left from the EVA assumptions. A banner marks each stop. Play/pause, speed, a position slider and optional sound (beeps and spoken stop names) are available. It needs a calculated route.
+- **Step-by-step preview:** the planned stops one at a time.
+
+**Export mission → Playback video (WebM)** records the same playback to a 1280 × 720 video file in real time (about 30 seconds for the default mission). Keep the tab open while it records.
+
+The playback is adapted from Hirushi192's EVA traverse animation on the `nethsara` branch, rebuilt so every value comes from the loaded data or the editable assumptions.
+
+## Map layers computed from elevation
+
+These are shown for reference. Routes use the elevation and slope directly, not these images.
+
+- **Base map:** elevation coloured from low to high and hillshaded as if lit from the upper left.
+- **Hazards:** each cell's steepest slope to a neighbouring cell, in three classes: steeper than 10°, 18° and 22°, the limits of the three route profiles. Cells without a valid neighbour are left unshaded.
+- **Topography:** contours every 50 m, with brighter lines every 250 m. They are placed by marching squares, which interpolates where the surface crosses each level between cell centres.
+
+The hillshading, three-level hazards and interpolated contours are adapted from Gihan Kesara's `prepare_full_dem.py`, `prepare_hazards.py` and `prepare_contours.py` on the `kesara` branch.
 
 ## How it works
 
@@ -45,6 +129,29 @@ When a GeoTIFF does not describe its bands, place a sidecar file next to it name
   - `POST /api/files/upload` adds a file to `data/`, with its name in the `X-File-Name` header.
   - `POST /api/alignment` with `{"files": [...]}` previews how a selection lines up.
   - `POST /api/dataset` with `{"files": [...]}` loads a selection; `GET /api/dataset` returns the loaded data and build progress.
-  - `POST /api/route` with `{"start":[x,y],"goal":[x,y],"profile":"balanced"}` returns a route and `dataUsed`.
+  - `POST /api/route` with `{"start":[x,y],"goal":[x,y],"profile":"balanced"}` returns a route, the elevation of every step (`elevationsM`), `dataUsed`, and `alongRoute`: what every other loaded layer shows along the route (distance on each class, boundaries crossed, or the lowest, average and highest value). `alongRoute` is for reporting only and never affects the route.
+  - `GET /api/analysis?type=viewshed|walkback&x=&y=&profile=` calculates line of sight or walk-back distance from the camp at grid cell (x, y) and returns an overlay image and legend. Route requests that include `"camp": [x, y]` also report both along the route.
+  - `GET /api/region?x0=&y0=&x1=&y1=&size=` returns the corner coordinates of a grid window and, when elevation is loaded, its elevation averaged into at most `size` samples per side.
 - A* searches eight neighbouring cells using distance plus a slope penalty, rejects steps above the selected slope limit, and avoids missing elevation cells.
-- Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`. No build step.
+- Frontend: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/terrain.js`, `dist/files.js`, `dist/views.js`, `dist/export.js`, `dist/eva.js`, `dist/playback.js`. No build step.
+
+## Exporting a mission
+
+**Export mission** offers three downloads:
+
+- **2D traverse map (PNG):** the area around the waypoints with the base map and visible layers, the calculated route, waypoint labels with elevations, a scale bar computed from the pixel size, corner coordinates from the reference file, legends and data sources.
+- **3D relief and route profile (PNG):** the same area drawn in 3D from the elevation data, with the visible layers draped on it, the route at its real elevations, and a chart of elevation against distance along the route. The vertical exaggeration is printed on the sheet.
+- **Mission data (JSON):** waypoints, the route, and which data was and was not used.
+
+If the route has not been calculated, the sheets join the waypoints with dashed lines and say so. Duration, oxygen use, surface conditions and science value are listed as not calculated. The sheet layout follows Hirushi192's export on the `Nethsara` branch; the drawn values come only from the loaded data.
+
+## Limitations
+
+- The 20 m elevation pixels cannot show individual rocks or obstacles smaller than one pixel.
+- Radiation and weather are not modelled, because no loaded data supplies them. EVA duration and oxygen use are estimates from editable assumptions, not measurements.
+- CRISM mineral positions are accurate to about 28–75 m.
+- Routes are not validated for operational navigation.
+
+## Use of AI tools
+
+Parts of this project's code and documentation were written with the help of AI coding assistants (Claude, by Anthropic, and GitHub Copilot, used on the `nethsara` branch), working from the team's design and instructions. AI-assisted commits are marked with a `Co-Authored-By: Claude` line in the git history. No AI-generated images, video or audio are used. All map data comes from the sources listed above; no data was generated by AI.
